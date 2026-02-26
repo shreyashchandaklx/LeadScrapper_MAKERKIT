@@ -411,6 +411,47 @@
         .status-error .status-text {
             color: var(--red);
         }
+
+        /* ── Data Table ── */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+
+        .data-table th {
+            background: rgba(37, 99, 235, 0.08);
+            color: var(--text);
+            font-weight: 700;
+            padding: 12px 14px;
+            border-bottom: 2px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+
+        .data-table td {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+            vertical-align: top;
+        }
+
+        .data-table tbody tr:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        .data-table .col-title {
+            font-weight: 600;
+            color: var(--accent);
+            max-width: 200px;
+        }
+
+        .data-table .col-address {
+            max-width: 280px;
+            color: var(--muted);
+        }
     </style>
 </head>
 
@@ -471,13 +512,25 @@
 
         <!-- Result Container -->
         <div class="card" id="result-card"
-            style="display: none; margin-top: 24px; max-height: 500px; overflow-y: auto;">
+            style="display: none; margin-top: 24px; max-width: 1000px; width: 100vw; overflow-x: auto;">
             <div class="card-title" style="margin-bottom: 12px; padding-bottom: 8px;">
                 <div class="icon">📊</div>
                 Scraped Data Result
             </div>
-            <pre id="result-output"
-                style="font-size: 0.8rem; line-height: 1.5; color: var(--text); background: rgba(0,0,0,0.05); padding: 12px; border-radius: 8px; font-family: monospace; white-space: pre-wrap; word-wrap: break-word;"></pre>
+            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                <table class="data-table" id="result-table">
+                    <thead>
+                        <tr>
+                            <th>Business Name</th>
+                            <th>Category</th>
+                            <th>Rating</th>
+                            <th>Phone</th>
+                            <th>Address</th>
+                        </tr>
+                    </thead>
+                    <tbody id="result-tbody"></tbody>
+                </table>
+            </div>
         </div>
 
     </div>
@@ -727,13 +780,13 @@
             const label = document.getElementById('btn-label');
             const spinner = document.getElementById('btn-spinner');
             const resultCard = document.getElementById('result-card');
-            const resultOut = document.getElementById('result-output');
+            const resultTbody = document.getElementById('result-tbody');
 
             btn.disabled = true;
             label.textContent = 'Please wait, data is loading...';
             spinner.style.display = 'block';
             resultCard.style.display = 'none';
-            resultOut.textContent = '';
+            resultTbody.innerHTML = '';
 
             const payload = buildPayload();
 
@@ -753,7 +806,8 @@
                     } catch (e) {
                         data = await res.text();
                     }
-                    resultOut.textContent = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+
+                    renderTable(data);
                     resultCard.style.display = 'block';
                 } else {
                     showToast(`❌ Webhook error: ${res.status} ${res.statusText}`, 'error');
@@ -765,6 +819,92 @@
                 label.innerHTML = '🚀&nbsp; Run Pipeline';
                 spinner.style.display = 'none';
             }
+        }
+
+        /* ─── Render Table ─── */
+        function renderTable(data) {
+            const tbody = document.getElementById('result-tbody');
+            tbody.innerHTML = ''; // clear
+
+            let arr = [];
+            if (Array.isArray(data)) arr = data;
+            else if (data && typeof data === 'object') {
+                // If the webhook returns an object with a results array deeply nested, try to find it
+                if (Array.isArray(data.data)) arr = data.data;
+                else if (Array.isArray(data.items)) arr = data.items;
+                else arr = [data]; // fallback to array of 1 object
+            } else {
+                tbody.innerHTML = `<tr><td colspan="5">Could not parse data as a list. Raw: ${esc(String(data).substring(0, 100))}...</td></tr>`;
+                return;
+            }
+
+            if (arr.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">No results returned.</td></tr>`;
+                return;
+            }
+
+            arr.forEach(item => {
+                const tr = document.createElement('tr');
+
+                // Safe extraction
+                const title = item.Title || item.title || item.name || '-';
+                const cat = item.CategoryName || item.category || '-';
+                const rating = item.TotalScore ? `${item.TotalScore} ⭐ (${item.ReviewsCount || 0})` : '-';
+                const phone = item.Phone || item.phone || '-';
+                const addr = item.Address || item.address || '-';
+
+                tr.innerHTML = `
+                    <td class="col-title">${esc(String(title))}</td>
+                    <td>${esc(String(cat))}</td>
+                    <td>${esc(String(rating))}</td>
+                    <td>${esc(String(phone))}</td>
+                    <td class="col-address">${esc(String(addr))}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        /* ─── Render Table ─── */
+        function renderTable(data) {
+            const tbody = document.getElementById('result-tbody');
+            tbody.innerHTML = ''; // clear
+
+            let arr = [];
+            if (Array.isArray(data)) arr = data;
+            else if (data && typeof data === 'object') {
+                // If the webhook returns an object with a results array deeply nested, try to find it
+                if (Array.isArray(data.data)) arr = data.data;
+                else if (Array.isArray(data.items)) arr = data.items;
+                else arr = [data]; // fallback to array of 1 object
+            } else {
+                tbody.innerHTML = `<tr><td colspan="5">Could not parse data as a list. Raw: ${esc(String(data).substring(0, 100))}...</td></tr>`;
+                return;
+            }
+
+            if (arr.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">No results returned.</td></tr>`;
+                return;
+            }
+
+            arr.forEach(item => {
+                const tr = document.createElement('tr');
+
+                // Safe extraction
+                const title = item.Title || item.title || item.name || '-';
+                const cat = item.CategoryName || item.category || '-';
+                const rating = item.TotalScore ? `${item.TotalScore} ⭐ (${item.ReviewsCount || 0})` : '-';
+                const phone = item.Phone || item.phone || '-';
+                const addr = item.Address || item.address || '-';
+
+                tr.innerHTML = `
+                    <td class="col-title">${esc(String(title))}</td>
+                    <td>${esc(String(cat))}</td>
+                    <td>${esc(String(rating))}</td>
+                    <td>${esc(String(phone))}</td>
+                    <td class="col-address">${esc(String(addr))}</td>
+                `;
+                tbody.appendChild(tr);
+            });
         }
 
         function highlight_errors(noLoc, noMax, noTags) {
