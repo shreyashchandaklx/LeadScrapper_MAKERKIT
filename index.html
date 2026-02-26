@@ -727,13 +727,12 @@
         /* ─── Auth logic ─── */
         // ===== EMAILJS CONFIGURATION =====
         // Initialize with your Public Key
-        emailjs.init("S2xvM89kU_5MW2ads");
+        emailjs.init("YOUR_PUBLIC_KEY");
 
-        const EMAILJS_SERVICE_ID = "service_l55n1k5";
+        const EMAILJS_SERVICE_ID = "YOUR_SERVICE_ID";
 
-        // We will use your existing customer template, but to make this look like an OTP
-        // you should really create a new template in EmailJS! We're putting your variables here
-        const EMAILJS_TEMPLATE_ID = "template_1v0dbro"; // Your auto-reply template
+        // This MUST be your own template ID, created for OTPs
+        const EMAILJS_TEMPLATE_ID = "YOUR_TEMPLATE_ID";
 
         let generatedOtp = '';
 
@@ -757,15 +756,9 @@
 
             try {
                 // Send the email using EmailJS
-                // We map these variables based on the template used in PT Window Cleaning.
-                // Note: The template template_1v0dbro usually sends an auto-reply about window cleaning.
-                // For a proper OTP email, create a new template in EmailJS and update EMAILJS_TEMPLATE_ID.
                 await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-                    from_email: email,             // Mapped to where the customer receives the email
-                    from_name: "Lead Scraper Login",
-                    message: "Your Secure Login OTP is: " + generatedOtp, // Fallback if your template shows message
-                    otp: generatedOtp,             // If you add {{otp}} to the template
-                    to_email: email                // If you add {{to_email}} to the template
+                    to_email: email,      // Make sure your EmailJS Template has {{to_email}} in the "To Email" field
+                    otp: generatedOtp     // Make sure your EmailJS Template has {{otp}} in the email message body
                 });
 
                 showToast('OTP sent to your email successfully!', 'success');
