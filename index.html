@@ -453,8 +453,6 @@
             color: var(--muted);
         }
     </style>
-    <!-- EmailJS -->
-    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 </head>
 
 <body>
@@ -720,20 +718,8 @@
         })();
     </script>
 
-    <!-- EmailJS CDN -->
-    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-
     <script>
         /* ─── Auth logic ─── */
-        // ===== EMAILJS CONFIGURATION =====
-        // Initialize with your Public Key
-        emailjs.init("YOUR_PUBLIC_KEY");
-
-        const EMAILJS_SERVICE_ID = "YOUR_SERVICE_ID";
-
-        // This MUST be your own template ID, created for OTPs
-        const EMAILJS_TEMPLATE_ID = "YOUR_TEMPLATE_ID";
-
         let generatedOtp = '';
 
         async function sendOtp() {
@@ -755,11 +741,16 @@
             generatedOtp = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
 
             try {
-                // Send the email using EmailJS
-                await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-                    to_email: email,      // Make sure your EmailJS Template has {{to_email}} in the "To Email" field
-                    otp: generatedOtp     // Make sure your EmailJS Template has {{otp}} in the email message body
+                // Call our Vercel Serverless Function to send the email via MailerSend
+                const res = await fetch('/api/send-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email, otp: generatedOtp })
                 });
+
+                if (!res.ok) {
+                    throw new Error('Failed to send OTP email');
+                }
 
                 showToast('OTP sent to your email successfully!', 'success');
 
@@ -768,8 +759,8 @@
                 document.getElementById('login-otp').focus();
 
             } catch (error) {
-                console.error("EmailJS error:", error);
-                showToast('Failed to send OTP. Please check your EmailJS config.', 'error');
+                console.error("MailerSend API error:", error);
+                showToast('Failed to send OTP via MailerSend. Check the console.', 'error');
             } finally {
                 btn.disabled = false;
                 label.innerHTML = '✉️&nbsp; Send OTP';
