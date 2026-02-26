@@ -458,81 +458,131 @@
 <body>
     <canvas id="bg-canvas"></canvas>
 
-    <header>
-        <div class="badge"><span>⚡</span> Google Maps · Lead Enrichment</div>
-        <h1>Lead Scraper Pipeline<br />Enter Your Parameters</h1>
-        <p>Configure your scraping job below. Fill in the location, maximum places to crawl, and the business niches you
-            want to target — then hit <strong>Run Pipeline</strong>.</p>
-    </header>
+    <!-- ── Login ── -->
+    <div id="login-content" style="display: flex; flex-direction: column; align-items: center; width: 100%;">
+        <header>
+            <div class="badge"><span>🔒</span> Authentication</div>
+            <h1>Secure Login</h1>
+            <p>Please enter your email to receive a one-time password (OTP).</p>
+        </header>
 
-    <div class="layout">
-
-        <!-- ── LEFT — Input Form ── -->
-        <div class="card">
-            <div class="card-title">
-                <div class="icon">🗂️</div>
-                Pipeline Configuration
-            </div>
-
-            <!-- Location -->
-            <div class="field">
-                <label for="location">Location Query <span class="req">*</span></label>
-                <input type="text" id="location" placeholder="e.g. Pune, India" autocomplete="off" />
-            </div>
-
-            <!-- Max places -->
-            <div class="field">
-                <label for="maxPlaces">Max Crawled Places Per Search <span class="req">*</span></label>
-                <input type="number" id="maxPlaces" placeholder="50" min="1" max="1000" />
-            </div>
-
-            <!-- Niche tag input -->
-            <div class="field">
-                <label>Niche / Business Types <span class="req">*</span></label>
-                <div class="tag-box" id="tag-box">
-                    <input id="tag-input" type="text" placeholder="Type a niche and press Enter…" autocomplete="off" />
+        <div class="layout">
+            <div class="card">
+                <div class="card-title">
+                    <div class="icon">✉️</div>
+                    Login verification
                 </div>
-                <div class="tag-hint">Press <kbd>Enter</kbd> or <kbd>,</kbd> after each niche to add it as a tag.</div>
-            </div>
 
-            <!-- Status -->
-            <div class="status-row" id="status-row">
-                <div class="status-dot"></div>
-                <span class="status-text">Fill in your parameters to preview the payload</span>
-            </div>
-
-            <!-- Run button -->
-            <button class="btn-run" id="btn-run" onclick="runPipeline()">
-                <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
-                    <span id="btn-label">🚀&nbsp; Run Pipeline</span>
-                    <div class="spinner" id="btn-spinner" style="margin: 0;"></div>
+                <div id="email-step">
+                    <div class="field">
+                        <label for="login-email">Email Address <span class="req">*</span></label>
+                        <input type="text" id="login-email" placeholder="you@example.com" autocomplete="email" />
+                    </div>
+                    <button class="btn-run" id="btn-send-otp" onclick="sendOtp()">
+                        <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                            <span id="btn-send-otp-label">✉️&nbsp; Send OTP</span>
+                            <div class="spinner" id="btn-send-otp-spinner" style="margin: 0;"></div>
+                        </div>
+                    </button>
                 </div>
-            </button>
-        </div>
 
-        <!-- Result Container -->
-        <div class="card" id="result-card"
-            style="display: none; margin-top: 24px; max-width: 1000px; width: 100vw; overflow-x: auto;">
-            <div class="card-title" style="margin-bottom: 12px; padding-bottom: 8px;">
-                <div class="icon">📊</div>
-                Scraped Data Result
-            </div>
-            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
-                <table class="data-table" id="result-table">
-                    <thead>
-                        <tr>
-                            <th>Business Name</th>
-                            <th>Category</th>
-                            <th>Rating</th>
-                            <th>Phone</th>
-                            <th>Address</th>
-                        </tr>
-                    </thead>
-                    <tbody id="result-tbody"></tbody>
-                </table>
+                <div id="otp-step" style="display: none;">
+                    <div class="field">
+                        <label for="login-otp">Enter OTP <span class="req">*</span></label>
+                        <input type="text" id="login-otp" placeholder="123456" autocomplete="one-time-code" />
+                    </div>
+                    <button class="btn-run" id="btn-verify-otp" onclick="verifyOtp()">
+                        <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                            <span id="btn-verify-otp-label">🔐&nbsp; Verify OTP</span>
+                            <div class="spinner" id="btn-verify-otp-spinner" style="margin: 0;"></div>
+                        </div>
+                    </button>
+                </div>
             </div>
         </div>
+    </div>
 
+    <!-- ── App Content ── -->
+    <div id="app-content" style="display: none; flex-direction: column; align-items: center; width: 100%;">
+        <header>
+            <div class="badge"><span>⚡</span> Google Maps · Lead Enrichment</div>
+            <h1>Lead Scraper Pipeline<br />Enter Your Parameters</h1>
+            <p>Configure your scraping job below. Fill in the location, maximum places to crawl, and the business niches
+                you
+                want to target — then hit <strong>Run Pipeline</strong>.</p>
+        </header>
+
+        <div class="layout">
+
+            <!-- ── LEFT — Input Form ── -->
+            <div class="card">
+                <div class="card-title">
+                    <div class="icon">🗂️</div>
+                    Pipeline Configuration
+                </div>
+
+                <!-- Location -->
+                <div class="field">
+                    <label for="location">Location Query <span class="req">*</span></label>
+                    <input type="text" id="location" placeholder="e.g. Pune, India" autocomplete="off" />
+                </div>
+
+                <!-- Max places -->
+                <div class="field">
+                    <label for="maxPlaces">Max Crawled Places Per Search <span class="req">*</span></label>
+                    <input type="number" id="maxPlaces" placeholder="50" min="1" max="1000" />
+                </div>
+
+                <!-- Niche tag input -->
+                <div class="field">
+                    <label>Niche / Business Types <span class="req">*</span></label>
+                    <div class="tag-box" id="tag-box">
+                        <input id="tag-input" type="text" placeholder="Type a niche and press Enter…"
+                            autocomplete="off" />
+                    </div>
+                    <div class="tag-hint">Press <kbd>Enter</kbd> or <kbd>,</kbd> after each niche to add it as a tag.
+                    </div>
+                </div>
+
+                <!-- Status -->
+                <div class="status-row" id="status-row">
+                    <div class="status-dot"></div>
+                    <span class="status-text">Fill in your parameters to preview the payload</span>
+                </div>
+
+                <!-- Run button -->
+                <button class="btn-run" id="btn-run" onclick="runPipeline()">
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                        <span id="btn-label">🚀&nbsp; Run Pipeline</span>
+                        <div class="spinner" id="btn-spinner" style="margin: 0;"></div>
+                    </div>
+                </button>
+            </div>
+
+            <!-- Result Container -->
+            <div class="card" id="result-card"
+                style="display: none; margin-top: 24px; max-width: 1000px; width: 100vw; overflow-x: auto;">
+                <div class="card-title" style="margin-bottom: 12px; padding-bottom: 8px;">
+                    <div class="icon">📊</div>
+                    Scraped Data Result
+                </div>
+                <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                    <table class="data-table" id="result-table">
+                        <thead>
+                            <tr>
+                                <th>Business Name</th>
+                                <th>Category</th>
+                                <th>Rating</th>
+                                <th>Phone</th>
+                                <th>Address</th>
+                            </tr>
+                        </thead>
+                        <tbody id="result-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
     </div>
 
     <div id="toast"></div>
@@ -669,6 +719,76 @@
     </script>
 
     <script>
+        /* ─── Auth logic ─── */
+        let generatedOtp = '';
+
+        function sendOtp() {
+            const email = document.getElementById('login-email').value.trim();
+            if (!email || !email.includes('@')) {
+                shake(document.getElementById('login-email'));
+                showToast('Please enter a valid email.', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('btn-send-otp');
+            const label = document.getElementById('btn-send-otp-label');
+            const spinner = document.getElementById('btn-send-otp-spinner');
+
+            btn.disabled = true;
+            label.textContent = 'Sending...';
+            spinner.style.display = 'block';
+
+            // Simulate API call to send OTP
+            setTimeout(() => {
+                btn.disabled = false;
+                label.innerHTML = '✉️&nbsp; Send OTP';
+                spinner.style.display = 'none';
+
+                generatedOtp = Math.floor(100000 + Math.random() * 900000).toString(); // simple 6-digit OTP
+
+                // For demo purposes, we alert the OTP
+                alert(`DEMO ONLY: Your OTP is ${generatedOtp}`);
+
+                showToast('OTP sent to your email!', 'success');
+
+                document.getElementById('email-step').style.display = 'none';
+                document.getElementById('otp-step').style.display = 'block';
+                document.getElementById('login-otp').focus();
+            }, 1000);
+        }
+
+        function verifyOtp() {
+            const otp = document.getElementById('login-otp').value.trim();
+            if (!otp) {
+                shake(document.getElementById('login-otp'));
+                return;
+            }
+
+            const btn = document.getElementById('btn-verify-otp');
+            const label = document.getElementById('btn-verify-otp-label');
+            const spinner = document.getElementById('btn-verify-otp-spinner');
+
+            btn.disabled = true;
+            label.textContent = 'Verifying...';
+            spinner.style.display = 'block';
+
+            // Simulate API call to verify OTP
+            setTimeout(() => {
+                btn.disabled = false;
+                label.innerHTML = '🔐&nbsp; Verify OTP';
+                spinner.style.display = 'none';
+
+                if (otp === generatedOtp) {
+                    showToast('Login successful!', 'success');
+                    document.getElementById('login-content').style.display = 'none';
+                    document.getElementById('app-content').style.display = 'flex';
+                } else {
+                    shake(document.getElementById('login-otp'));
+                    showToast('Invalid OTP. Please try again.', 'error');
+                }
+            }, 1000);
+        }
+
         /* ─── State ─── */
         const tags = [];
 
