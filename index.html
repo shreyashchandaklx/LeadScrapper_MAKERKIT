@@ -480,6 +480,17 @@
                 <input type="text" id="location" placeholder="e.g. Pune, India" autocomplete="off" />
             </div>
 
+            <!-- Zip Codes -->
+            <div class="field">
+                <label>Zip Code/s</label>
+                <div class="tag-box" id="zip-tag-box">
+                    <input id="zip-tag-input" type="text" placeholder="Type a zip code and press Enter…"
+                        autocomplete="off" inputmode="numeric" />
+                </div>
+                <div class="tag-hint">Press <kbd>Enter</kbd> or <kbd>,</kbd> after each zip code to add it as a tag.
+                </div>
+            </div>
+
             <!-- Max places -->
             <div class="field">
                 <label for="maxPlaces">Max Crawled Places Per Search <span class="req">*</span></label>
@@ -671,8 +682,9 @@
     <script>
         /* ─── State ─── */
         const tags = [];
+        const zipCodes = [];
 
-        /* ─── Tag Input ─── */
+        /* ─── Niche Tag Input ─── */
         const tagInput = document.getElementById('tag-input');
         const tagBox = document.getElementById('tag-box');
 
@@ -702,7 +714,7 @@
         }
 
         function renderTags() {
-            document.querySelectorAll('.tag').forEach(t => t.remove());
+            tagBox.querySelectorAll('.tag').forEach(t => t.remove());
             tags.forEach((t, i) => {
                 const el = document.createElement('span');
                 el.className = 'tag';
@@ -711,11 +723,48 @@
             });
         }
 
+        /* ─── Zip Code Tag Input ─── */
+        const zipInput = document.getElementById('zip-tag-input');
+        const zipTagBox = document.getElementById('zip-tag-box');
+
+        zipInput.addEventListener('keydown', e => {
+            if (['Enter', ','].includes(e.key)) {
+                e.preventDefault();
+                addZip(zipInput.value.trim().replace(/,+$/, ''));
+            } else if (e.key === 'Backspace' && zipInput.value === '' && zipCodes.length) {
+                removeZip(zipCodes.length - 1);
+            }
+        });
+
+        zipTagBox.addEventListener('click', () => zipInput.focus());
+
+        function addZip(val) {
+            if (!val || zipCodes.includes(val)) return;
+            zipCodes.push(val);
+            renderZips();
+            zipInput.value = '';
+        }
+
+        function removeZip(i) {
+            zipCodes.splice(i, 1);
+            renderZips();
+        }
+
+        function renderZips() {
+            zipTagBox.querySelectorAll('.tag').forEach(t => t.remove());
+            zipCodes.forEach((z, i) => {
+                const el = document.createElement('span');
+                el.className = 'tag';
+                el.innerHTML = `${esc(z)}<button onclick="removeZip(${i})" title="Remove">×</button>`;
+                zipTagBox.insertBefore(el, zipInput);
+            });
+        }
+
         /* ─── Build the payload object ─── */
         function buildPayload() {
             const location = document.getElementById('location').value.trim();
             const max = parseInt(document.getElementById('maxPlaces').value) || 50;
-            return {
+            const payload = {
                 includeWebResults: false,
                 language: "en",
                 locationQuery: location,
@@ -738,6 +787,10 @@
                 searchStringsArray: [...tags],
                 skipClosedPlaces: false
             };
+            if (zipCodes.length > 0) {
+                payload.zipCodes = [...zipCodes];
+            }
+            return payload;
         }
 
 
