@@ -14,7 +14,7 @@ export default async function handler(req, res) {
     
     // IMPORTANT: You MUST change this to the verified domain from your MailerSend dashboard! 
     // Usually it looks like MS_xxxxx@trial-xxxxx.mlsender.net if you are on a free trial domain.
-    const FROM_EMAIL = "hello@trial-YOUR-MAILERSEND-DOMAIN.mlsender.net"; 
+    const FROM_EMAIL = "hello@test-3m5jgroed3ogdpyo.mlsender.net"; 
 
     try {
         const response = await fetch('https://api.mailersend.com/v1/email', {
