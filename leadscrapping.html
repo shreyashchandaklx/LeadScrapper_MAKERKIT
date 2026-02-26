@@ -480,16 +480,17 @@
                 <input type="text" id="location" placeholder="e.g. Pune, India" autocomplete="off" />
             </div>
 
-            <!-- Zip Codes -->
+            <!-- Zip Codes (commented out)
             <div class="field">
                 <label>Zip Code/s</label>
                 <div class="tag-box" id="zip-tag-box">
-                    <input id="zip-tag-input" type="text" placeholder="Type a zip code and press Enter…"
+                    <input id="zip-tag-input" type="text" placeholder="Type a zip code and press Enter&hellip;"
                         autocomplete="off" inputmode="numeric" />
                 </div>
                 <div class="tag-hint">Press <kbd>Enter</kbd> or <kbd>,</kbd> after each zip code to add it as a tag.
                 </div>
             </div>
+            -->
 
             <!-- Max places -->
             <div class="field">
@@ -682,7 +683,7 @@
     <script>
         /* ─── State ─── */
         const tags = [];
-        const zipCodes = [];
+        // const zipCodes = []; // zip codes commented out
 
         /* ─── Niche Tag Input ─── */
         const tagInput = document.getElementById('tag-input');
@@ -723,7 +724,8 @@
             });
         }
 
-        /* ─── Zip Code Tag Input ─── */
+        /* ─── Zip Code Tag Input (commented out) ─── */
+        /*
         const zipInput = document.getElementById('zip-tag-input');
         const zipTagBox = document.getElementById('zip-tag-box');
 
@@ -759,6 +761,7 @@
                 zipTagBox.insertBefore(el, zipInput);
             });
         }
+        */
 
         /* ─── Build the payload object ─── */
         function buildPayload() {
@@ -787,9 +790,7 @@
                 searchStringsArray: [...tags],
                 skipClosedPlaces: false
             };
-            if (zipCodes.length > 0) {
-                payload.zipCodes = [...zipCodes];
-            }
+            // if (zipCodes.length > 0) { payload.zipCodes = [...zipCodes]; } // zip codes commented out
             return payload;
         }
 
