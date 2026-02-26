@@ -462,9 +462,22 @@
 
             <!-- Run button -->
             <button class="btn-run" id="btn-run" onclick="runPipeline()">
-                <span id="btn-label">🚀&nbsp; Run Pipeline</span>
-                <div class="spinner" id="btn-spinner"></div>
+                <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                    <span id="btn-label">🚀&nbsp; Run Pipeline</span>
+                    <div class="spinner" id="btn-spinner" style="margin: 0;"></div>
+                </div>
             </button>
+        </div>
+
+        <!-- Result Container -->
+        <div class="card" id="result-card"
+            style="display: none; margin-top: 24px; max-height: 500px; overflow-y: auto;">
+            <div class="card-title" style="margin-bottom: 12px; padding-bottom: 8px;">
+                <div class="icon">📊</div>
+                Scraped Data Result
+            </div>
+            <pre id="result-output"
+                style="font-size: 0.8rem; line-height: 1.5; color: var(--text); background: rgba(0,0,0,0.05); padding: 12px; border-radius: 8px; font-family: monospace; white-space: pre-wrap; word-wrap: break-word;"></pre>
         </div>
 
     </div>
@@ -713,14 +726,19 @@
             const btn = document.getElementById('btn-run');
             const label = document.getElementById('btn-label');
             const spinner = document.getElementById('btn-spinner');
+            const resultCard = document.getElementById('result-card');
+            const resultOut = document.getElementById('result-output');
 
             btn.disabled = true;
-            label.style.display = 'none';
+            label.textContent = 'Please wait, data is loading...';
             spinner.style.display = 'block';
+            resultCard.style.display = 'none';
+            resultOut.textContent = '';
 
             const payload = buildPayload();
 
             try {
+                // The n8n webhook will keep this connection open until the Apify module finishes
                 const res = await fetch(WEBHOOK_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -728,7 +746,15 @@
                 });
 
                 if (res.ok) {
-                    showToast('✅ Pipeline triggered successfully!', 'success');
+                    showToast('✅ Pipeline finished successfully!', 'success');
+                    let data;
+                    try {
+                        data = await res.json();
+                    } catch (e) {
+                        data = await res.text();
+                    }
+                    resultOut.textContent = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+                    resultCard.style.display = 'block';
                 } else {
                     showToast(`❌ Webhook error: ${res.status} ${res.statusText}`, 'error');
                 }
@@ -736,7 +762,7 @@
                 showToast(`❌ Network error: ${err.message}`, 'error');
             } finally {
                 btn.disabled = false;
-                label.style.display = '';
+                label.innerHTML = '🚀&nbsp; Run Pipeline';
                 spinner.style.display = 'none';
             }
         }
