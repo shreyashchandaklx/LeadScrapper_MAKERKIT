@@ -579,7 +579,7 @@
                             <tr>
                                 <th>Business Name</th>
                                 <th>Category</th>
-                                <th>Rating</th>
+                                <th>Maps URL</th>
                                 <th>Phone</th>
                                 <th>Address</th>
                             </tr>
@@ -996,17 +996,19 @@
                 // Safe extraction
                 const title = item.Title || item.title || item.name || '-';
                 const cat = item.CategoryName || item.category || '-';
-                const rating = item.TotalScore ? `${item.TotalScore} ⭐ (${item.ReviewsCount || 0})` : '-';
+                const mapsUrl = item.Url || item.url || '-';
                 const phone = item.Phone || item.phone || '-';
                 const addr = item.Address || item.address || '-';
 
                 // Push the entire raw item to global state for comprehensive CSV export
                 globalScrapedData.push(item);
 
+                const mapLink = mapsUrl !== '-' ? `<a href="${esc(String(mapsUrl))}" target="_blank" style="color: var(--accent); text-decoration: underline;">View Map</a>` : '-';
+
                 tr.innerHTML = `
                     <td class="col-title">${esc(String(title))}</td>
                     <td>${esc(String(cat))}</td>
-                    <td>${esc(String(rating))}</td>
+                    <td>${mapLink}</td>
                     <td>${esc(String(phone))}</td>
                     <td class="col-address">${esc(String(addr))}</td>
                 `;
