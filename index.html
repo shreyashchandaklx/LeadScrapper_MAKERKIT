@@ -1000,14 +1000,8 @@
                 const phone = item.Phone || item.phone || '-';
                 const addr = item.Address || item.address || '-';
 
-                // Push to global state for CSV
-                globalScrapedData.push({
-                    "Business Name": title,
-                    "Category": cat,
-                    "Rating": rating,
-                    "Phone": phone,
-                    "Address": addr
-                });
+                // Push the entire raw item to global state for comprehensive CSV export
+                globalScrapedData.push(item);
 
                 tr.innerHTML = `
                     <td class="col-title">${esc(String(title))}</td>
@@ -1030,16 +1024,27 @@
                 return;
             }
 
-            const headers = ["Business Name", "Category", "Rating", "Phone", "Address"];
+            // Gather all possible keys across all items for comprehensive headers
+            const headerSet = new Set();
+            globalScrapedData.forEach(item => {
+                Object.keys(item).forEach(key => headerSet.add(key));
+            });
+            const headers = Array.from(headerSet);
             const csvRows = [];
 
             // Header row
-            csvRows.push(headers.map(h => `"${h}"`).join(","));
+            csvRows.push(headers.map(h => `"${String(h).replace(/"/g, '""')}"`).join(","));
 
             // Data rows
             globalScrapedData.forEach(row => {
                 const values = headers.map(header => {
-                    let val = row[header] || "";
+                    let val = row[header];
+                    if (val === null || val === undefined) {
+                        val = "";
+                    } else if (typeof val === 'object') {
+                        // Stringify JSON objects (like Location, ImageCategories)
+                        val = JSON.stringify(val);
+                    }
                     // Escape double quotes by doubling them
                     return `"${String(val).replace(/"/g, '""')}"`;
                 });
