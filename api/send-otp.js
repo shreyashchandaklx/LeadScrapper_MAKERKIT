@@ -9,33 +9,24 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Missing email or otp' });
     }
 
-    // Your MailerSend API Key
-    const MAILERSEND_API_KEY = "mlsn.b8b334975ded87ed9eed0e705880fa81706c697af15c046295663bad0f6784fc";
+    // Your Resend API Key
+    const RESEND_API_KEY = "re_RiA7oj7U_4ecasSxbhyqd79aWMXJNUb1A";
     
-    // IMPORTANT: You MUST change this to the verified domain from your MailerSend dashboard! 
-    // Usually it looks like MS_xxxxx@trial-xxxxx.mlsender.net if you are on a free trial domain.
-    const FROM_EMAIL = "hello@test-3m5jgroed3ogdpyo.mlsender.net"; 
+    // Resend free tier without a custom verified domain requires sending from 'onboarding@resend.dev'
+    // NOTE: On the free tier, you can ONLY send test emails to the exact email address you used to register your Resend account.
+    const FROM_EMAIL = "onboarding@resend.dev"; 
 
     try {
-        const response = await fetch('https://api.mailersend.com/v1/email', {
+        const response = await fetch('https://api.resend.com/emails', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                'Authorization': `Bearer ${MAILERSEND_API_KEY}`
+                'Authorization': `Bearer ${RESEND_API_KEY}`
             },
             body: JSON.stringify({
-                from: {
-                    email: FROM_EMAIL,
-                    name: "Lead Scraper Login"
-                },
-                to: [
-                    {
-                        email: email
-                    }
-                ],
+                from: `Lead Scraper Login <${FROM_EMAIL}>`,
+                to: [email],
                 subject: "Your Lead Scraper OTP",
-                text: `Your secure one-time password is: ${otp}`,
                 html: `<div>
                          <h2>Login Verification</h2>
                          <p>Your secure one-time password is: <strong style="font-size: 24px;">${otp}</strong></p>
@@ -46,11 +37,12 @@ export default async function handler(req, res) {
 
         if (!response.ok) {
             const errorData = await response.text();
-            console.error("MailerSend API Error:", errorData);
-            return res.status(response.status).json({ error: 'Error sending email', details: errorData });
+            console.error("Resend API Error:", errorData);
+            return res.status(response.status).json({ error: 'Error sending email via Resend', details: errorData });
         }
 
-        return res.status(200).json({ message: 'Email sent successfully' });
+        const responseData = await response.json();
+        return res.status(200).json({ message: 'Email sent successfully via Resend', id: responseData.id });
     } catch (error) {
         console.error("Function Error:", error);
         return res.status(500).json({ error: 'Internal Server Error' });
