@@ -912,8 +912,8 @@
             }
         }
 
-        /* ─── n8n Webhook ─── */
-        const WEBHOOK_URL = 'https://n8n.srv1322489.hstgr.cloud/webhook/896756a9-5a04-4410-b450-68295ae3b9ad';
+        /* ─── n8n Webhook for Lead Scrapping ─── */
+        const SCRAPER_WEBHOOK_URL = 'https://n8n.srv1322489.hstgr.cloud/webhook/lead-scrapping';
 
         /* ─── Run Pipeline ─── */
         async function runPipeline() {
@@ -941,7 +941,7 @@
 
             try {
                 // The n8n webhook will keep this connection open until the Apify module finishes
-                const res = await fetch(WEBHOOK_URL, {
+                const res = await fetch(SCRAPER_WEBHOOK_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
