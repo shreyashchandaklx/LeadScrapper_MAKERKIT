@@ -562,9 +562,16 @@
             <!-- Result Container -->
             <div class="card" id="result-card"
                 style="display: none; margin-top: 24px; max-width: 1000px; width: 100vw; overflow-x: auto;">
-                <div class="card-title" style="margin-bottom: 12px; padding-bottom: 8px;">
-                    <div class="icon">📊</div>
-                    Scraped Data Result
+                <div class="card-title"
+                    style="margin-bottom: 12px; padding-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div class="icon">📊</div>
+                        Scraped Data Result
+                    </div>
+                    <button id="btn-download" onclick="downloadCSV()"
+                        style="display: none; background: var(--accent); color: white; border: none; padding: 6px 12px; border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: opacity 0.2s;">
+                        ⬇️ Download CSV
+                    </button>
                 </div>
                 <div class="table-container" style="max-height: 400px; overflow-y: auto;">
                     <table class="data-table" id="result-table">
@@ -818,6 +825,7 @@
 
         /* ─── State ─── */
         const tags = [];
+        let globalScrapedData = [];
 
         /* ─── Niche Tag Input ─── */
         const tagInput = document.getElementById('tag-input');
@@ -983,13 +991,18 @@
                 else arr = [data]; // fallback to array of 1 object
             } else {
                 tbody.innerHTML = `<tr><td colspan="5">Could not parse data as a list. Raw: ${esc(String(data).substring(0, 100))}...</td></tr>`;
+                document.getElementById('btn-download').style.display = 'none';
                 return;
             }
 
             if (arr.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">No results returned.</td></tr>`;
+                document.getElementById('btn-download').style.display = 'none';
                 return;
             }
+
+            // Save for CSV download
+            globalScrapedData = [];
 
             arr.forEach(item => {
                 const tr = document.createElement('tr');
@@ -1001,6 +1014,15 @@
                 const phone = item.Phone || item.phone || '-';
                 const addr = item.Address || item.address || '-';
 
+                // Push to global state for CSV
+                globalScrapedData.push({
+                    "Business Name": title,
+                    "Category": cat,
+                    "Rating": rating,
+                    "Phone": phone,
+                    "Address": addr
+                });
+
                 tr.innerHTML = `
                     <td class="col-title">${esc(String(title))}</td>
                     <td>${esc(String(cat))}</td>
@@ -1010,49 +1032,46 @@
                 `;
                 tbody.appendChild(tr);
             });
+
+            // Show download button
+            document.getElementById('btn-download').style.display = 'block';
         }
 
-        /* ─── Render Table ─── */
-        function renderTable(data) {
-            const tbody = document.getElementById('result-tbody');
-            tbody.innerHTML = ''; // clear
-
-            let arr = [];
-            if (Array.isArray(data)) arr = data;
-            else if (data && typeof data === 'object') {
-                // If the webhook returns an object with a results array deeply nested, try to find it
-                if (Array.isArray(data.data)) arr = data.data;
-                else if (Array.isArray(data.items)) arr = data.items;
-                else arr = [data]; // fallback to array of 1 object
-            } else {
-                tbody.innerHTML = `<tr><td colspan="5">Could not parse data as a list. Raw: ${esc(String(data).substring(0, 100))}...</td></tr>`;
+        /* ─── Download CSV ─── */
+        function downloadCSV() {
+            if (globalScrapedData.length === 0) {
+                showToast('No data available to download', 'error');
                 return;
             }
 
-            if (arr.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">No results returned.</td></tr>`;
-                return;
-            }
+            const headers = ["Business Name", "Category", "Rating", "Phone", "Address"];
+            const csvRows = [];
 
-            arr.forEach(item => {
-                const tr = document.createElement('tr');
+            // Header row
+            csvRows.push(headers.map(h => `"${h}"`).join(","));
 
-                // Safe extraction
-                const title = item.Title || item.title || item.name || '-';
-                const cat = item.CategoryName || item.category || '-';
-                const rating = item.TotalScore ? `${item.TotalScore} ⭐ (${item.ReviewsCount || 0})` : '-';
-                const phone = item.Phone || item.phone || '-';
-                const addr = item.Address || item.address || '-';
-
-                tr.innerHTML = `
-                    <td class="col-title">${esc(String(title))}</td>
-                    <td>${esc(String(cat))}</td>
-                    <td>${esc(String(rating))}</td>
-                    <td>${esc(String(phone))}</td>
-                    <td class="col-address">${esc(String(addr))}</td>
-                `;
-                tbody.appendChild(tr);
+            // Data rows
+            globalScrapedData.forEach(row => {
+                const values = headers.map(header => {
+                    let val = row[header] || "";
+                    // Escape double quotes by doubling them
+                    return `"${String(val).replace(/"/g, '""')}"`;
+                });
+                csvRows.push(values.join(","));
             });
+
+            const csvString = csvRows.join("\n");
+            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = 'scraped_leads.csv';
+            document.body.appendChild(a);
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('CSV Download Started!', 'success');
         }
 
         function highlight_errors(noLoc, noMax, noTags) {
