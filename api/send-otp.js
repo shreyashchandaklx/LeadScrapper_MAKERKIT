@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     }
 
     // Your Resend API Key
-    const RESEND_API_KEY = "re_RiA7oj7U_4ecasSxbhyqd79aWMXJNUb1A";
+    const RESEND_API_KEY = "re_7QHw9upb_Pn6B8vCfBfBrG5wDTV58HbqA";
     
     // Resend free tier without a custom verified domain requires sending from 'onboarding@resend.dev'
     // NOTE: On the free tier, you can ONLY send test emails to the exact email address you used to register your Resend account.
