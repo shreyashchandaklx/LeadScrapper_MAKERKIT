@@ -20,7 +20,7 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: 'Acme <onboarding@resend.dev>', // REPLACE THIS WITH YOUR PREFERRED FROM EMAIL
+        from: 'Pixnom <info@pixnom.com>', // Verified custom domain email
         to: [email],
         subject: 'Your Login OTP',
         html: `<p>Your One-Time Password (OTP) for login is: <strong>${otp}</strong></p>`
