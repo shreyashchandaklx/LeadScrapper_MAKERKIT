@@ -748,28 +748,24 @@
             generatedOtp = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
 
             try {
-                // Call Resend API directly to securely send the email
-                const RESEND_API_URL = 'https://api.resend.com/emails';
-                const RESEND_API_KEY = 're_CJdJkCQu_FNFo6S3P9meonG3niaedpo3g'; // User provided API key
+                // Call our Vercel Serverless Function to securely send the email
+                const API_URL = '/api/send-otp';
 
-                const res = await fetch(RESEND_API_URL, {
+                const res = await fetch(API_URL, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${RESEND_API_KEY}`,
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        from: 'Acme <onboarding@resend.dev>', // REPLACE THIS WITH YOUR FROM EMAIL
-                        to: [email],
-                        subject: 'Your Login OTP',
-                        html: `<p>Your One-Time Password (OTP) for login is: <strong>${generatedOtp}</strong></p>`
+                        email: email,
+                        otp: generatedOtp
                     })
                 });
 
                 if (!res.ok) {
                     const errorText = await res.text();
-                    console.error("Resend API error:", errorText);
-                    throw new Error('Failed to send OTP via Resend');
+                    console.error("Vercel API error:", errorText);
+                    throw new Error('Failed to send OTP via Vercel Function');
                 }
 
                 showToast('OTP sent to your email successfully!', 'success');
