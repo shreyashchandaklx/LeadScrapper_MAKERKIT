@@ -1,1125 +1,378 @@
-<!DOCTYPE html>
-<html lang="en">
-
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Lead Scraper Pipeline — Enter Your Parameters</title>
+<!doctype html>
+<html data-theme="paper">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Leadscrapper Pixnom</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='%23111111'/><text x='50' y='72' font-family='serif' font-size='65' font-weight='bold' fill='white' text-anchor='middle'>P</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
-        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5" type="text/css" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=renderTurnstile&render=explicit" async defer></script>
+
+    <!-- Paper Design Theme -->
     <style>
-        *,
-        *::before,
-        *::after {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        :root {
-            --bg: #f8fafc;
-            --surface: rgba(255, 255, 255, 0.75);
-            --surface2: rgba(255, 255, 255, 0.55);
-            --border: rgba(15, 23, 42, 0.1);
-            --accent: #2563eb;
-            --accent2: #6366f1;
-            --green: #16a34a;
-            --red: #dc2626;
-            --text: #0f172a;
-            --muted: #475569;
-            --tag-bg: rgba(37, 99, 235, 0.12);
-            --tag-fg: #1d4ed8;
-            --tag-del: #3b82f6;
-            --radius: 14px;
-            --shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background: transparent;
-            color: var(--text);
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 40px 16px 80px;
-        }
-
-        /* ── 3D Canvas Background ── */
-        #bg-canvas {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            z-index: -1;
-            pointer-events: none;
-        }
-
-        /* ── Header ── */
-        header {
-            position: relative;
-            z-index: 1;
-            text-align: center;
-            margin-bottom: 40px;
-            max-width: 760px;
-        }
-
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: rgba(79, 142, 247, .12);
-            border: 1px solid rgba(79, 142, 247, .28);
-            color: var(--accent);
-            font-size: .72rem;
-            font-weight: 600;
-            letter-spacing: .08em;
-            text-transform: uppercase;
-            padding: 5px 14px;
-            border-radius: 99px;
-            margin-bottom: 18px;
-        }
-
-        .badge span {
-            font-size: .85rem;
-        }
-
-        h1 {
-            font-size: clamp(1.6rem, 4vw, 2.6rem);
-            font-weight: 800;
-            line-height: 1.22;
-            background: linear-gradient(135deg, #0f172a 30%, #3b82f6 80%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 12px;
-        }
-
-        header p {
-            color: var(--muted);
-            font-size: .97rem;
-            line-height: 1.65;
-            max-width: 520px;
-            margin: 0 auto;
-        }
-
-        /* ── Layout ── */
-        .layout {
-            position: relative;
-            z-index: 1;
-            width: 100%;
-            max-width: 560px;
-        }
-
-        /* ── Card ── */
-        .card {
-            background: var(--surface);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            box-shadow: var(--shadow);
-            padding: 32px 28px;
-        }
-
-        .card-title {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 1rem;
-            font-weight: 700;
-            color: var(--text);
-            margin-bottom: 24px;
-            padding-bottom: 16px;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .card-title .icon {
-            width: 32px;
-            height: 32px;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: linear-gradient(135deg, #bfdbfe, #e0e7ff);
-            color: #1e40af;
-            font-size: 1rem;
-        }
-
-        /* ── Form fields ── */
-        .field {
-            margin-bottom: 22px;
-        }
-
-        .field:last-child {
-            margin-bottom: 0;
-        }
-
-        label {
-            display: block;
-            font-size: .8rem;
-            font-weight: 600;
-            color: var(--muted);
-            letter-spacing: .05em;
-            text-transform: uppercase;
-            margin-bottom: 8px;
-        }
-
-        label .req {
-            color: var(--accent);
-            margin-left: 2px;
-        }
-
-        input[type="text"],
-        input[type="number"] {
-            width: 100%;
-            background: var(--surface2);
-            border: 1.5px solid var(--border);
-            border-radius: 10px;
-            color: var(--text);
-            font-family: 'Inter', sans-serif;
-            font-size: .95rem;
-            padding: 12px 14px;
-            outline: none;
-            transition: border-color .2s, box-shadow .2s;
-        }
-
-        input[type="text"]:focus,
-        input[type="number"]:focus {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px rgba(79, 142, 247, .15);
-        }
-
-        input::placeholder {
-            color: var(--muted);
-        }
-
-        /* ── Tag input ── */
-        .tag-box {
-            background: var(--surface2);
-            border: 1.5px solid var(--border);
-            border-radius: 10px;
-            padding: 10px 12px;
-            cursor: text;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            align-items: center;
-            min-height: 52px;
-            transition: border-color .2s, box-shadow .2s;
-        }
-
-        .tag-box:focus-within {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px rgba(79, 142, 247, .15);
-        }
-
-        .tag {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            background: var(--tag-bg);
-            color: var(--tag-fg);
-            border: 1px solid rgba(37, 99, 235, 0.2);
-            border-radius: 6px;
-            padding: 4px 10px;
-            font-size: .82rem;
-            font-weight: 600;
-            animation: tagIn .15s ease;
-        }
-
-        @keyframes tagIn {
-            from {
-                transform: scale(.85);
-                opacity: 0;
-            }
-
-            to {
-                transform: scale(1);
-                opacity: 1;
-            }
-        }
-
-        .tag button {
-            background: none;
-            border: none;
-            cursor: pointer;
-            color: var(--tag-del);
-            font-size: .9rem;
-            line-height: 1;
-            padding: 0 1px;
-            transition: color .15s;
-        }
-
-        .tag button:hover {
-            color: var(--red);
-        }
-
-        #tag-input {
-            flex: 1;
-            min-width: 140px;
-            background: transparent;
-            border: none;
-            outline: none;
-            color: var(--text);
-            font-family: 'Inter', sans-serif;
-            font-size: .92rem;
-        }
-
-        #tag-input::placeholder {
-            color: var(--muted);
-        }
-
-        .tag-hint {
-            font-size: .75rem;
-            color: var(--muted);
-            margin-top: 6px;
-        }
-
-        /* ── Run button ── */
-        .btn-run {
-            margin-top: 28px;
-            width: 100%;
-            padding: 15px;
-            border: none;
-            border-radius: 10px;
-            cursor: pointer;
-            font-family: 'Inter', sans-serif;
-            font-size: 1rem;
-            font-weight: 700;
-            letter-spacing: .03em;
-            color: #fff;
-            background: linear-gradient(135deg, var(--accent), var(--accent2));
-            box-shadow: 0 4px 24px rgba(79, 142, 247, .3);
-            transition: transform .18s, box-shadow .18s, opacity .18s;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .btn-run::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(rgba(255, 255, 255, .08), transparent);
-        }
-
-        .btn-run:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 32px rgba(79, 142, 247, .45);
-        }
-
-        .btn-run:active {
-            transform: translateY(0);
-        }
-
-        .btn-run:disabled {
-            opacity: .55;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .btn-run .spinner {
-            display: none;
-            width: 18px;
-            height: 18px;
-            border: 2px solid rgba(255, 255, 255, .3);
-            border-top-color: #fff;
-            border-radius: 50%;
-            animation: spin .7s linear infinite;
-            margin: 0 auto;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-
-
-        /* ── Toast ── */
-        #toast {
-            position: fixed;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%) translateY(10px);
-            background: var(--green);
-            color: #fff;
-            font-size: .88rem;
-            font-weight: 600;
-            padding: 12px 24px;
-            border-radius: 99px;
-            box-shadow: 0 6px 24px rgba(0, 0, 0, .25);
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity .25s, transform .25s, background .2s;
-            z-index: 999;
-            white-space: nowrap;
-        }
-
-        #toast.show {
-            opacity: 1;
-            transform: translateX(-50%) translateY(0);
-        }
-
-        #toast.error {
-            background: var(--red);
-        }
-
-        /* ── Status chip ── */
-        .status-row {
-            margin-top: 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            min-height: 24px;
-        }
-
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-        }
-
-        .status-text {
-            font-size: .82rem;
-        }
-
-        .status-idle .status-dot {
-            background: var(--muted);
-        }
-
-        .status-idle .status-text {
-            color: var(--muted);
-        }
-
-        .status-ready .status-dot {
-            background: var(--green);
-            box-shadow: 0 0 6px var(--green);
-        }
-
-        .status-ready .status-text {
-            color: var(--green);
-        }
-
-        .status-error .status-dot {
-            background: var(--red);
-        }
-
-        .status-error .status-text {
-            color: var(--red);
-        }
-
-        /* ── Data Table ── */
-        .data-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.85rem;
-            text-align: left;
-        }
-
-        .data-table th {
-            background: rgba(37, 99, 235, 0.08);
-            color: var(--text);
-            font-weight: 700;
-            padding: 12px 14px;
-            border-bottom: 2px solid var(--border);
-            position: sticky;
-            top: 0;
-            z-index: 2;
-        }
-
-        .data-table td {
-            padding: 12px 14px;
-            border-bottom: 1px solid var(--border);
-            color: var(--text);
-            vertical-align: top;
-        }
-
-        .data-table tbody tr:hover {
-            background: rgba(255, 255, 255, 0.4);
-        }
-
-        .data-table .col-title {
-            font-weight: 600;
-            color: var(--accent);
-            max-width: 200px;
-        }
-
-        .data-table .col-address {
-            max-width: 280px;
-            color: var(--muted);
-        }
+      [data-theme='paper'] {
+        color-scheme: light;
+        --radius-selector: 0.125rem; --radius-field: 0.25rem; --radius-box: 0.25rem;
+        --size-selector: 0.25rem; --size-field: 0.25rem;
+        --border: 1px; --depth: 0; --noise: 0;
+        --color-base-100: #FFFFFF; --color-base-200: #F9FAFB; --color-base-300: #E5E7EB;
+        --color-base-content: #111827;
+        --color-primary: #111111; --color-primary-content: #ffffff;
+        --color-secondary: #8B5CF6; --color-secondary-content: #ffffff;
+        --color-accent: #8B5CF6; --color-accent-content: #ffffff;
+        --color-neutral: #1F2937; --color-neutral-content: #F3F4F6;
+        --color-info: #6B7280; --color-info-content: #ffffff;
+        --color-success: #16A34A; --color-success-content: #ffffff;
+        --color-warning: #D97706; --color-warning-content: #ffffff;
+        --color-error: #DC2626; --color-error-content: #ffffff;
+      }
     </style>
-</head>
 
-<body>
-    <canvas id="bg-canvas"></canvas>
+    <!-- Login Page Styles -->
+    <style>
+      #login-page {
+        font-family: 'Inter', sans-serif;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 40px 16px;
+        position: relative;
+        background: #FFFFFF;
+      }
+      #login-page::before {
+        content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        background-image: url("data:image/svg+xml,%3Csvg width='6' height='6' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='6' height='6' fill='%23fafafa'/%3E%3Crect width='1' height='1' x='3' y='3' fill='%23e5e7eb' fill-opacity='.25'/%3E%3C/svg%3E");
+        opacity: 0.6; pointer-events: none; z-index: 0;
+      }
+      #login-page .login-badge {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: #F3F4F6; border: 1px solid #E5E7EB;
+        color: #111827; font-size: .72rem; font-weight: 500;
+        letter-spacing: .1em; text-transform: uppercase;
+        padding: 5px 14px; border-radius: 2px; margin-bottom: 18px;
+        font-family: 'Inter', sans-serif;
+      }
+      #login-page h1 {
+        font-family: 'Inter', sans-serif;
+        font-size: clamp(1.6rem, 4vw, 2.6rem); font-weight: 700; line-height: 1.22;
+        color: #111827; margin-bottom: 12px; letter-spacing: -.02em;
+      }
+      #login-page .login-subtitle { color: #6B7280; font-size: .95rem; line-height: 1.65; max-width: 520px; margin: 0 auto; }
+      #login-page .login-card {
+        background: #FFFFFF;
+        border: 1px solid #E5E7EB; border-radius: 4px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06); padding: 32px 28px;
+        width: 100%; max-width: 440px;
+      }
+      #login-page .card-title {
+        display: flex; align-items: center; gap: 10px;
+        font-family: 'Inter', sans-serif;
+        font-size: .95rem; font-weight: 600; color: #111827;
+        margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #E5E7EB;
+      }
+      #login-page .card-title .icon {
+        width: 32px; height: 32px; border-radius: 4px;
+        display: flex; align-items: center; justify-content: center;
+        background: #F3F4F6; color: #111827; font-size: 1rem;
+      }
+      #login-page .field { margin-bottom: 22px; }
+      #login-page label { display: block; font-size: .72rem; font-weight: 500; color: #6B7280; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; font-family: 'Inter', sans-serif; }
+      #login-page label .req { color: #DC2626; margin-left: 2px; }
+      #login-page input[type="text"],
+      #login-page input[type="email"] {
+        width: 100%; background: #FFFFFF;
+        border: 1px solid #D1D5DB; border-radius: 4px;
+        color: #111827; font-family: 'Inter', sans-serif; font-size: .95rem;
+        padding: 12px 14px; outline: none; transition: border-color .2s, box-shadow .2s;
+      }
+      #login-page input:focus { border-color: #111111; box-shadow: 0 0 0 2px rgba(17,17,17,.06); }
+      #login-page input::placeholder { color: #9CA3AF; }
+      #login-page .btn-login {
+        margin-top: 20px; width: 100%; padding: 14px; border: none; border-radius: 4px; cursor: pointer;
+        font-family: 'Inter', sans-serif; font-size: .9rem; font-weight: 600; letter-spacing: .04em;
+        color: #fff; background: #111111;
+        box-shadow: none; transition: background .18s;
+        position: relative; overflow: hidden;
+      }
+      #login-page .btn-login:hover { background: #333333; }
+      #login-page .btn-login:active { background: #000000; }
+      #login-page .btn-login:disabled { opacity: .4; cursor: not-allowed; }
+      #login-page .btn-login .spinner {
+        display: none; width: 18px; height: 18px;
+        border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
+        border-radius: 50%; animation: loginspin .7s linear infinite; margin: 0 auto;
+      }
+      @keyframes loginspin { to { transform: rotate(360deg); } }
 
-    <!-- ── Login ── -->
-    <div id="login-content" style="display: flex; flex-direction: column; align-items: center; width: 100%;">
-        <header>
-            <div class="badge"><span>🔒</span> Authentication</div>
-            <h1>Secure Login</h1>
-            <p>Please enter your email to receive a one-time password (OTP).</p>
-        </header>
+      /* Toast */
+      #toast {
+        position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(10px);
+        background: #111827; color: #fff; font-size: .85rem; font-weight: 500;
+        font-family: 'Inter', sans-serif;
+        padding: 12px 24px; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,.08);
+        opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s;
+        z-index: 999; white-space: nowrap;
+      }
+      #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+      #toast.error { background: #DC2626; }
+    </style>
 
-        <div class="layout">
-            <div class="card">
-                <div class="card-title">
-                    <div class="icon">✉️</div>
-                    Login verification
-                </div>
+    <link rel="stylesheet" href="styles.css" />
 
-                <div id="email-step">
-                    <div class="field">
-                        <label for="login-email">Email Address <span class="req">*</span></label>
-                        <input type="text" id="login-email" placeholder="you@example.com" autocomplete="email" />
-                    </div>
-                    <button class="btn-run" id="btn-send-otp" onclick="sendOtp()">
-                        <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
-                            <span id="btn-send-otp-label">✉️&nbsp; Send OTP</span>
-                            <div class="spinner" id="btn-send-otp-spinner" style="margin: 0;"></div>
-                        </div>
-                    </button>
-                </div>
+    <script>
+      /* Force Paper Theme */
+      document.documentElement.setAttribute('data-theme', 'paper');
+    </script>
+  </head>
+  <body class="bg-base-100 text-base-content overflow-x-hidden" style="font-family:'Inter',sans-serif;">
 
-                <div id="otp-step" style="display: none;">
-                    <div class="field">
-                        <label for="login-otp">Enter OTP <span class="req">*</span></label>
-                        <input type="text" id="login-otp" placeholder="123456" autocomplete="one-time-code" />
-                    </div>
-                    <button class="btn-run" id="btn-verify-otp" onclick="verifyOtp()">
-                        <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
-                            <span id="btn-verify-otp-label">🔐&nbsp; Verify OTP</span>
-                            <div class="spinner" id="btn-verify-otp-spinner" style="margin: 0;"></div>
-                        </div>
-                    </button>
-                </div>
-            </div>
-        </div>
+    <!-- ── CAPTCHA GATE ── -->
+    <div id="captcha-page" style="font-family:'Inter',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#FFFFFF;">
+      <div style="text-align:center;margin-bottom:30px;">
+        <h2 style="font-family:'Inter',sans-serif;font-size:1.15rem;font-weight:600;color:#111827;margin-bottom:8px;letter-spacing:-.01em;">leadscrapper.pixnom.com</h2>
+        <p style="color:#6B7280;font-size:.9rem;">Checking if the site connection is secure</p>
+      </div>
+      <div id="turnstile-container"></div>
+      <p style="color:#9CA3AF;font-size:.78rem;margin-top:24px;font-family:'Inter',sans-serif;">Verifying you are human.</p>
     </div>
 
-    <!-- ── App Content ── -->
-    <div id="app-content" style="display: none; flex-direction: column; align-items: center; width: 100%;">
-        <header>
-            <div class="badge"><span>⚡</span> Google Maps · Lead Enrichment</div>
-            <h1>Lead Scraper Pipeline<br />Enter Your Parameters</h1>
-            <p>Configure your scraping job below. Fill in the location, maximum places to crawl, and the business niches
-                you
-                want to target — then hit <strong>Run Pipeline</strong>.</p>
-        </header>
+    <script>
+      // Detect embed mode (loaded inside Makerkit iframe)
+      var isEmbedMode = new URLSearchParams(window.location.search).get('embed') === 'true';
+      // Expose to React app so it can hide the sidebar
+      window.__EMBED_MODE__ = isEmbedMode;
 
-        <div class="layout">
+      function renderTurnstile() {
+        // Skip Turnstile on localhost (site key is for leadscrapper.pixnom.com only)
+        var isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-            <!-- ── LEFT — Input Form ── -->
-            <div class="card">
-                <div class="card-title">
-                    <div class="icon">🗂️</div>
-                    Pipeline Configuration
-                </div>
+        // In embed mode, skip ALL gates (Turnstile + login) — user is already authed in Makerkit
+        if (isEmbedMode) {
+          document.getElementById('captcha-page').style.display = 'none';
+          document.getElementById('login-page').style.display = 'none';
 
-                <!-- Location -->
-                <div class="field">
-                    <label for="location">Location Query <span class="req">*</span></label>
-                    <input type="text" id="location" placeholder="e.g. Pune, India" autocomplete="off" />
-                </div>
+          // If user already identified on this domain, go straight to app
+          if (localStorage.getItem('loggedInUser')) {
+            document.getElementById('root').style.display = 'block';
+            return;
+          }
 
-                <!-- Max places -->
-                <div class="field">
-                    <label for="maxPlaces">Max Crawled Places Per Search <span class="req">*</span></label>
-                    <input type="number" id="maxPlaces" placeholder="50" min="1" max="1000" />
-                </div>
+          // First time via embed — show a minimal email prompt
+          var embedPrompt = document.getElementById('embed-email-prompt');
+          if (embedPrompt) {
+            embedPrompt.style.display = 'flex';
+          }
+          return;
+        }
 
-                <!-- Niche tag input -->
-                <div class="field">
-                    <label>Niche / Business Types <span class="req">*</span></label>
-                    <div class="tag-box" id="tag-box">
-                        <input id="tag-input" type="text" placeholder="Type a niche and press Enter…"
-                            autocomplete="off" />
-                    </div>
-                    <div class="tag-hint">Press <kbd>Enter</kbd> or <kbd>,</kbd> after each niche to add it as a tag.
-                    </div>
-                </div>
+        if (isLocal) {
+          document.getElementById('captcha-page').style.display = 'none';
+          if (localStorage.getItem('loggedIn') === 'true') {
+            document.getElementById('root').style.display = 'block';
+            if (typeof startInactivityTimer === 'function') startInactivityTimer();
+          } else {
+            document.getElementById('login-page').style.display = '';
+          }
+          return;
+        }
+        turnstile.render('#turnstile-container', {
+          sitekey: '0x4AAAAAAC4rKkLey4Ps6zXP',
+          theme: 'light',
+          callback: function(token) {
+            document.getElementById('captcha-page').style.display = 'none';
+            if (localStorage.getItem('loggedIn') === 'true') {
+              document.getElementById('root').style.display = 'block';
+              if (typeof startInactivityTimer === 'function') startInactivityTimer();
+            } else {
+              document.getElementById('login-page').style.display = '';
+            }
+          }
+        });
+      }
+    </script>
 
-                <!-- Status -->
-                <div class="status-row" id="status-row">
-                    <div class="status-dot"></div>
-                    <span class="status-text">Fill in your parameters to preview the payload</span>
-                </div>
+    <!-- ── EMBED EMAIL PROMPT (only shown in embed mode, first time) ── -->
+    <div id="embed-email-prompt" style="display:none;min-height:100vh;align-items:center;justify-content:center;background:#f9fafb;font-family:'Inter',sans-serif;">
+      <div style="background:#fff;border-radius:12px;padding:32px 28px;box-shadow:0 4px 24px rgba(0,0,0,.08);max-width:380px;width:90%;text-align:center;">
+        <div style="font-size:2rem;margin-bottom:12px;">🔗</div>
+        <h2 style="font-family:'Inter',sans-serif;font-size:1.1rem;font-weight:600;color:#111827;margin:0 0 6px;">Connect Your Account</h2>
+        <p style="color:#6B7280;font-size:.85rem;margin:0 0 20px;">Enter the email linked to your leads data.</p>
+        <input id="embed-email-input" type="email" placeholder="you@company.com"
+          style="width:100%;padding:10px 14px;border:1px solid #D1D5DB;border-radius:8px;font-size:.95rem;outline:none;box-sizing:border-box;margin-bottom:12px;" />
+        <button id="embed-email-btn"
+          style="width:100%;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:.95rem;font-weight:500;cursor:pointer;">
+          Continue
+        </button>
+        <p id="embed-email-error" style="color:#EF4444;font-size:.8rem;margin-top:8px;display:none;">Please enter a valid email.</p>
+      </div>
+    </div>
+    <script>
+      (function() {
+        var btn = document.getElementById('embed-email-btn');
+        var input = document.getElementById('embed-email-input');
+        var err = document.getElementById('embed-email-error');
+        if (!btn || !input) return;
 
-                <!-- Run button -->
-                <button class="btn-run" id="btn-run" onclick="runPipeline()">
-                    <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
-                        <span id="btn-label">🚀&nbsp; Run Pipeline</span>
-                        <div class="spinner" id="btn-spinner" style="margin: 0;"></div>
-                    </div>
-                </button>
-            </div>
+        function submit() {
+          var email = input.value.trim().toLowerCase();
+          if (!email || !email.includes('@')) {
+            err.style.display = 'block';
+            return;
+          }
+          err.style.display = 'none';
+          localStorage.setItem('loggedInUser', email);
+          localStorage.setItem('loggedIn', 'true');
+          document.getElementById('embed-email-prompt').style.display = 'none';
+          document.getElementById('root').style.display = 'block';
+        }
 
-            <!-- Result Container -->
-            <div class="card" id="result-card"
-                style="display: none; margin-top: 24px; max-width: 1000px; width: 100vw; overflow-x: auto;">
-                <div class="card-title"
-                    style="margin-bottom: 12px; padding-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <div class="icon">📊</div>
-                        Scraped Data Result
-                    </div>
-                    <button id="btn-download" onclick="downloadCSV()"
-                        style="display: none; background: var(--accent); color: white; border: none; padding: 6px 12px; border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: opacity 0.2s;">
-                        ⬇️ Download CSV
-                    </button>
-                </div>
-                <div class="table-container" style="max-height: 400px; overflow-y: auto;">
-                    <table class="data-table" id="result-table">
-                        <thead>
-                            <tr>
-                                <th>Business Name</th>
-                                <th>Category</th>
-                                <th>Maps URL</th>
-                                <th>Phone</th>
-                                <th>Address</th>
-                            </tr>
-                        </thead>
-                        <tbody id="result-tbody"></tbody>
-                    </table>
-                </div>
-            </div>
+        btn.addEventListener('click', submit);
+        input.addEventListener('keydown', function(e) { if (e.key === 'Enter') submit(); });
+      })();
+    </script>
 
+    <!-- ── LOGIN PAGE ── -->
+    <div id="login-page" style="display:none;">
+      <div style="text-align:center; margin-bottom:40px; position:relative; z-index:1;">
+        <div class="login-badge">Secure Access</div>
+        <h1>Leadscrapper Pixnom</h1>
+        <p class="login-subtitle">Enter your email to receive a secure login code.</p>
+      </div>
+
+      <div class="login-card" style="position:relative; z-index:1;">
+        <div class="card-title">
+          <div class="icon">&#9993;</div>
+          Authentication
         </div>
+
+        <div id="email-step">
+          <div class="field">
+            <label for="login-email">Email Address <span class="req">*</span></label>
+            <input type="email" id="login-email" placeholder="you@example.com" autocomplete="email" />
+          </div>
+          <button class="btn-login" id="btn-send-otp" onclick="sendOtp()">
+            <div style="display:flex;align-items:center;justify-content:center;gap:10px;">
+              <span id="btn-send-otp-label">Send OTP</span>
+              <div class="spinner" id="btn-send-otp-spinner" style="margin:0;"></div>
+            </div>
+          </button>
+        </div>
+
+        <div id="otp-step" style="display:none;">
+          <div class="field">
+            <label for="login-otp">Enter OTP Code <span class="req">*</span></label>
+            <input type="text" id="login-otp" placeholder="123456" autocomplete="one-time-code" />
+          </div>
+          <button class="btn-login" id="btn-verify-otp" onclick="verifyOtp()">
+            <div style="display:flex;align-items:center;justify-content:center;gap:10px;">
+              <span id="btn-verify-otp-label">Verify OTP</span>
+              <div class="spinner" id="btn-verify-otp-spinner" style="margin:0;"></div>
+            </div>
+          </button>
+        </div>
+      </div>
     </div>
 
+    <!-- ── REACT APP ── -->
+    <div id="root" style="display:none;"></div>
+    <script type="module" src="/app.jsx"></script>
+
+    <!-- Toast -->
     <div id="toast"></div>
 
-    <!-- Three.js 3D animated background -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
-        (function () {
-            const canvas = document.getElementById('bg-canvas');
-            const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-            renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(window.innerWidth, window.innerHeight);
+      let generatedOtp = '';
+      let inactivityTimeout;
 
-            const scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xdbeafe); // soft sky blue base
+      async function sendOtp() {
+        const email = document.getElementById('login-email').value.trim();
+        if (!email || !email.includes('@')) {
+          showToast('Please enter a valid email.', 'error');
+          return;
+        }
 
-            const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
-            camera.position.set(0, 0, 28);
+        const btn = document.getElementById('btn-send-otp');
+        const spinner = document.getElementById('btn-send-otp-spinner');
+        btn.disabled = true;
+        spinner.style.display = 'block';
 
-            // ── Gradient background plane ──
-            const bgGeo = new THREE.PlaneGeometry(200, 200);
-            const bgMat = new THREE.MeshBasicMaterial({
-                color: 0xeff6ff
-            });
-            const bgMesh = new THREE.Mesh(bgGeo, bgMat);
-            bgMesh.position.z = -50;
-            scene.add(bgMesh);
+        generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
 
-            // ── Wave grid ──
-            const COLS = 80, ROWS = 50;
-            const waveGeo = new THREE.BufferGeometry();
-            const positions = [];
-            const colors = [];
-            const indices = [];
-            const color = new THREE.Color();
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+          console.log("OTP:", generatedOtp);
+          alert("LOCAL MODE\nYour OTP is: " + generatedOtp);
+        }
 
-            for (let r = 0; r < ROWS; r++) {
-                for (let c = 0; c < COLS; c++) {
-                    const x = (c / (COLS - 1) - 0.5) * 60;
-                    const y = (r / (ROWS - 1) - 0.5) * 36;
-                    positions.push(x, y, 0);
-                    const t = c / COLS;
-                    color.setHSL(0.55 + t * 0.18, 0.7, 0.62);
-                    colors.push(color.r, color.g, color.b);
-                }
-            }
-            for (let r = 0; r < ROWS - 1; r++) {
-                for (let c = 0; c < COLS - 1; c++) {
-                    const a = r * COLS + c;
-                    indices.push(a, a + 1, a + COLS, a + 1, a + COLS + 1, a + COLS);
-                }
-            }
-            waveGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-            waveGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-            waveGeo.setIndex(indices);
-            const waveMat = new THREE.MeshBasicMaterial({
-                vertexColors: true,
-                wireframe: true,
-                transparent: true,
-                opacity: 0.25
-            });
-            const waveMesh = new THREE.Mesh(waveGeo, waveMat);
-            scene.add(waveMesh);
+        try {
+          await fetch('send-otp.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email, otp: generatedOtp })
+          });
+          showToast('OTP sent successfully!', 'success');
+          document.getElementById('email-step').style.display = 'none';
+          document.getElementById('otp-step').style.display = 'block';
+          document.getElementById('login-otp').focus();
+        } catch (error) {
+          showToast('Using backup OTP (see console)', 'success');
+          document.getElementById('email-step').style.display = 'none';
+          document.getElementById('otp-step').style.display = 'block';
+        } finally {
+          btn.disabled = false;
+          spinner.style.display = 'none';
+        }
+      }
 
-            // ── Floating glowing spheres ──
-            const spheres = [];
-            const sphereData = [
-                { r: 4.5, col: 0x6366f1, x: -14, y: 6, z: -8 },
-                { r: 3.2, col: 0x3b82f6, x: 12, y: -5, z: -4 },
-                { r: 5.0, col: 0x818cf8, x: 2, y: 10, z: -12 },
-                { r: 2.6, col: 0x60a5fa, x: -8, y: -8, z: -6 },
-                { r: 3.8, col: 0xa5b4fc, x: 16, y: 7, z: -10 },
-                { r: 2.0, col: 0x38bdf8, x: 0, y: -12, z: -5 },
-            ];
-            sphereData.forEach(d => {
-                const geo = new THREE.SphereGeometry(d.r, 32, 32);
-                const mat = new THREE.MeshPhongMaterial({
-                    color: d.col,
-                    transparent: true,
-                    opacity: 0.55,
-                    shininess: 120,
-                    specular: 0xffffff
-                });
-                const mesh = new THREE.Mesh(geo, mat);
-                mesh.position.set(d.x, d.y, d.z);
-                scene.add(mesh);
-                spheres.push({ mesh, ox: d.x, oy: d.y });
-            });
+      function verifyOtp() {
+        const otp = document.getElementById('login-otp').value.trim();
+        if (otp === generatedOtp) {
+          showToast('Success!', 'success');
+          const email = document.getElementById('login-email').value.trim().toLowerCase();
+          localStorage.setItem('loggedIn', 'true');
+          localStorage.setItem('loggedInUser', email);
+          showApp();
+        } else {
+          showToast('Invalid OTP code.', 'error');
+        }
+      }
 
-            // ── Lights ──
-            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-            const dir1 = new THREE.DirectionalLight(0x93c5fd, 1.2);
-            dir1.position.set(10, 20, 15);
-            scene.add(dir1);
-            const dir2 = new THREE.DirectionalLight(0xc7d2fe, 0.8);
-            dir2.position.set(-10, -10, 10);
-            scene.add(dir2);
+      function showApp() {
+        document.getElementById('captcha-page').style.display = 'none';
+        document.getElementById('login-page').style.display = 'none';
+        document.getElementById('root').style.display = 'block';
+        startInactivityTimer();
+      }
 
-            // ── Animate ──
-            const posAttr = waveGeo.getAttribute('position');
-            function animate(t) {
-                requestAnimationFrame(animate);
-                const ts = t * 0.001;
+      window.appLogout = function() {
+        localStorage.removeItem('loggedIn');
+        localStorage.removeItem('loggedInUser');
+        location.reload();
+      };
 
-                // Wave mesh
-                for (let r = 0; r < ROWS; r++) {
-                    for (let c = 0; c < COLS; c++) {
-                        const i = r * COLS + c;
-                        const x = (c / (COLS - 1) - 0.5) * 60;
-                        const y = (r / (ROWS - 1) - 0.5) * 36;
-                        posAttr.setZ(i, Math.sin(x * 0.18 + ts) * 1.6 + Math.cos(y * 0.22 + ts * 0.7) * 1.2);
-                    }
-                }
-                posAttr.needsUpdate = true;
-                waveGeo.computeVertexNormals();
+      function startInactivityTimer() {
+        const reset = () => {
+          clearTimeout(inactivityTimeout);
+          inactivityTimeout = setTimeout(() => window.appLogout(), 600000);
+        };
+        ['mousemove', 'keydown', 'click', 'scroll'].forEach(e => window.addEventListener(e, reset));
+        reset();
+      }
 
-                // Spheres float
-                spheres.forEach((s, i) => {
-                    s.mesh.position.x = s.ox + Math.sin(ts * 0.4 + i) * 1.8;
-                    s.mesh.position.y = s.oy + Math.cos(ts * 0.3 + i * 1.3) * 1.4;
-                    s.mesh.rotation.y = ts * 0.2 + i;
-                });
+      function showToast(msg, type) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = type === 'error' ? 'show error' : 'show';
+        setTimeout(() => t.className = '', 3500);
+      }
 
-                renderer.render(scene, camera);
-            }
-            animate(0);
-
-            window.addEventListener('resize', () => {
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            });
-        })();
+      window.addEventListener('DOMContentLoaded', () => {
+        // Always show captcha first — onTurnstileSuccess handles the rest
+      });
     </script>
-
-    <script>
-        /* ─── Auth logic ─── */
-        let generatedOtp = '';
-
-        async function sendOtp() {
-            const email = document.getElementById('login-email').value.trim();
-            if (!email || !email.includes('@')) {
-                shake(document.getElementById('login-email'));
-                showToast('Please enter a valid email.', 'error');
-                return;
-            }
-
-            const btn = document.getElementById('btn-send-otp');
-            const label = document.getElementById('btn-send-otp-label');
-            const spinner = document.getElementById('btn-send-otp-spinner');
-
-            btn.disabled = true;
-            label.textContent = 'Sending OTP...';
-            spinner.style.display = 'block';
-
-            generatedOtp = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
-
-            try {
-                // Call our Vercel Serverless Function to securely send the email
-                const API_URL = '/api/send-otp';
-
-                const res = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        email: email,
-                        otp: generatedOtp
-                    })
-                });
-
-                if (!res.ok) {
-                    const errorText = await res.text();
-                    console.error("Vercel API error:", errorText);
-                    throw new Error('Failed to send OTP via Vercel Function');
-                }
-
-                showToast('OTP sent to your email successfully!', 'success');
-
-                document.getElementById('email-step').style.display = 'none';
-                document.getElementById('otp-step').style.display = 'block';
-                document.getElementById('login-otp').focus();
-
-            } catch (error) {
-                console.error("Email sending error:", error);
-                showToast('Failed to send OTP email. Check the console.', 'error');
-            } finally {
-                btn.disabled = false;
-                label.innerHTML = '✉️&nbsp; Send OTP';
-                spinner.style.display = 'none';
-            }
-        }
-
-        function verifyOtp() {
-            const otp = document.getElementById('login-otp').value.trim();
-            if (!otp) {
-                shake(document.getElementById('login-otp'));
-                return;
-            }
-
-            const btn = document.getElementById('btn-verify-otp');
-            const label = document.getElementById('btn-verify-otp-label');
-            const spinner = document.getElementById('btn-verify-otp-spinner');
-
-            btn.disabled = true;
-            label.textContent = 'Verifying...';
-            spinner.style.display = 'block';
-
-            // Simulate API call to verify OTP
-            setTimeout(() => {
-                btn.disabled = false;
-                label.innerHTML = '🔐&nbsp; Verify OTP';
-                spinner.style.display = 'none';
-
-                if (otp === generatedOtp) {
-                    showToast('Login successful!', 'success');
-                    document.getElementById('login-content').style.display = 'none';
-                    document.getElementById('app-content').style.display = 'flex';
-                } else {
-                    shake(document.getElementById('login-otp'));
-                    showToast('Invalid OTP. Please try again.', 'error');
-                }
-            }, 1000);
-        }
-
-        /* ─── State ─── */
-        const tags = [];
-        let globalScrapedData = [];
-
-        /* ─── Niche Tag Input ─── */
-        const tagInput = document.getElementById('tag-input');
-        const tagBox = document.getElementById('tag-box');
-
-        tagInput.addEventListener('keydown', e => {
-            if (['Enter', ','].includes(e.key)) {
-                e.preventDefault();
-                addTag(tagInput.value.trim().replace(/,+$/, ''));
-            } else if (e.key === 'Backspace' && tagInput.value === '' && tags.length) {
-                removeTag(tags.length - 1);
-            }
-        });
-
-        tagBox.addEventListener('click', () => tagInput.focus());
-
-        function addTag(val) {
-            if (!val || tags.includes(val)) return;
-            tags.push(val);
-            renderTags();
-            tagInput.value = '';
-            updateStatus();
-        }
-
-        function removeTag(i) {
-            tags.splice(i, 1);
-            renderTags();
-            updateStatus();
-        }
-
-        function renderTags() {
-            tagBox.querySelectorAll('.tag').forEach(t => t.remove());
-            tags.forEach((t, i) => {
-                const el = document.createElement('span');
-                el.className = 'tag';
-                el.innerHTML = `${esc(t)}<button onclick="removeTag(${i})" title="Remove">×</button>`;
-                tagBox.insertBefore(el, tagInput);
-            });
-        }
-
-        /* ─── Build the payload object ─── */
-        function buildPayload() {
-            const location = document.getElementById('location').value.trim();
-            const max = parseInt(document.getElementById('maxPlaces').value) || 50;
-            const payload = {
-                includeWebResults: false,
-                language: "en",
-                locationQuery: location,
-                maxCrawledPlacesPerSearch: max,
-                maxImages: 0,
-                maximumLeadsEnrichmentRecords: 0,
-                scrapeContacts: false,
-                scrapeDirectories: false,
-                scrapeImageAuthors: false,
-                scrapePlaceDetailPage: false,
-                scrapeReviewsPersonalData: true,
-                scrapeSocialMediaProfiles: {
-                    facebooks: false,
-                    instagrams: false,
-                    tiktoks: false,
-                    twitters: false,
-                    youtubes: false
-                },
-                scrapeTableReservationProvider: false,
-                searchStringsArray: [...tags],
-                skipClosedPlaces: false
-            };
-            return payload;
-        }
-
-
-
-        function updateStatus() {
-            const row = document.getElementById('status-row');
-            const loc = document.getElementById('location').value.trim();
-            const maxVal = document.getElementById('maxPlaces').value.trim();
-            const dot = row.querySelector('.status-dot');
-            const txt = row.querySelector('.status-text');
-
-            row.className = 'status-row';
-            if (!loc || !maxVal || tags.length === 0) {
-                row.classList.add('status-idle');
-                const missing = [];
-                if (!loc) missing.push('Location');
-                if (!maxVal) missing.push('Max Places');
-                if (tags.length === 0) missing.push('at least one Niche');
-                txt.textContent = 'Waiting for: ' + missing.join(', ');
-            } else {
-                row.classList.add('status-ready');
-                txt.textContent = `Ready — ${tags.length} niche${tags.length > 1 ? 's' : ''} · ${document.getElementById('maxPlaces').value} places max`;
-            }
-        }
-
-        /* ─── n8n Webhook for Lead Scrapping ─── */
-        const SCRAPER_WEBHOOK_URL = 'https://n8n.srv1322489.hstgr.cloud/webhook/lead-scrapping';
-
-        /* ─── Run Pipeline ─── */
-        async function runPipeline() {
-            const loc = document.getElementById('location').value.trim();
-            const maxV = document.getElementById('maxPlaces').value.trim();
-
-            if (!loc || !maxV || tags.length === 0) {
-                highlight_errors(!loc, !maxV, tags.length === 0);
-                return;
-            }
-
-            const btn = document.getElementById('btn-run');
-            const label = document.getElementById('btn-label');
-            const spinner = document.getElementById('btn-spinner');
-            const resultCard = document.getElementById('result-card');
-            const resultTbody = document.getElementById('result-tbody');
-
-            btn.disabled = true;
-            label.textContent = 'Please wait, data is loading...';
-            spinner.style.display = 'block';
-            resultCard.style.display = 'none';
-            resultTbody.innerHTML = '';
-
-            const payload = buildPayload();
-
-            try {
-                // The n8n webhook will keep this connection open until the Apify module finishes
-                const res = await fetch(SCRAPER_WEBHOOK_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                if (res.ok) {
-                    showToast('✅ Pipeline finished successfully!', 'success');
-                    let data;
-                    try {
-                        data = await res.json();
-                    } catch (e) {
-                        data = await res.text();
-                    }
-
-                    renderTable(data);
-                    resultCard.style.display = 'block';
-                } else {
-                    showToast(`❌ Webhook error: ${res.status} ${res.statusText}`, 'error');
-                }
-            } catch (err) {
-                showToast(`❌ Network error: ${err.message}`, 'error');
-            } finally {
-                btn.disabled = false;
-                label.innerHTML = '🚀&nbsp; Run Pipeline';
-                spinner.style.display = 'none';
-            }
-        }
-
-        /* ─── Render Table ─── */
-        function renderTable(data) {
-            const tbody = document.getElementById('result-tbody');
-            tbody.innerHTML = ''; // clear
-
-            let arr = [];
-            if (Array.isArray(data)) arr = data;
-            else if (data && typeof data === 'object') {
-                // If the webhook returns an object with a results array deeply nested, try to find it
-                if (Array.isArray(data.data)) arr = data.data;
-                else if (Array.isArray(data.items)) arr = data.items;
-                else arr = [data]; // fallback to array of 1 object
-            } else {
-                tbody.innerHTML = `<tr><td colspan="5">Could not parse data as a list. Raw: ${esc(String(data).substring(0, 100))}...</td></tr>`;
-                document.getElementById('btn-download').style.display = 'none';
-                return;
-            }
-
-            if (arr.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">No results returned.</td></tr>`;
-                document.getElementById('btn-download').style.display = 'none';
-                return;
-            }
-
-            // Save for CSV download
-            globalScrapedData = [];
-
-            arr.forEach(item => {
-                const tr = document.createElement('tr');
-
-                // Safe extraction
-                const title = item.Title || item.title || item.name || '-';
-                const cat = item.CategoryName || item.category || '-';
-                const mapsUrl = item.Url || item.url || '-';
-                const phone = item.Phone || item.phone || '-';
-                const addr = item.Address || item.address || '-';
-
-                // Push the entire raw item to global state for comprehensive CSV export
-                globalScrapedData.push(item);
-
-                const mapLink = mapsUrl !== '-' ? `<a href="${esc(String(mapsUrl))}" target="_blank" style="color: var(--accent); text-decoration: underline;">View Map</a>` : '-';
-
-                tr.innerHTML = `
-                    <td class="col-title">${esc(String(title))}</td>
-                    <td>${esc(String(cat))}</td>
-                    <td>${mapLink}</td>
-                    <td>${esc(String(phone))}</td>
-                    <td class="col-address">${esc(String(addr))}</td>
-                `;
-                tbody.appendChild(tr);
-            });
-
-            // Show download button
-            document.getElementById('btn-download').style.display = 'block';
-        }
-
-        /* ─── Download CSV ─── */
-        function downloadCSV() {
-            if (globalScrapedData.length === 0) {
-                showToast('No data available to download', 'error');
-                return;
-            }
-
-            // Gather all possible keys across all items for comprehensive headers
-            const headerSet = new Set();
-            globalScrapedData.forEach(item => {
-                Object.keys(item).forEach(key => headerSet.add(key));
-            });
-            const headers = Array.from(headerSet);
-            const csvRows = [];
-
-            // Header row
-            csvRows.push(headers.map(h => `"${String(h).replace(/"/g, '""')}"`).join(","));
-
-            // Data rows
-            globalScrapedData.forEach(row => {
-                const values = headers.map(header => {
-                    let val = row[header];
-                    if (val === null || val === undefined) {
-                        val = "";
-                    } else if (typeof val === 'object') {
-                        // Stringify JSON objects (like Location, ImageCategories)
-                        val = JSON.stringify(val);
-                    }
-                    // Escape double quotes by doubling them
-                    return `"${String(val).replace(/"/g, '""')}"`;
-                });
-                csvRows.push(values.join(","));
-            });
-
-            const csvString = csvRows.join("\n");
-            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = url;
-            a.download = 'scraped_leads.csv';
-            document.body.appendChild(a);
-            a.click();
-            URL.revokeObjectURL(url);
-            showToast('CSV Download Started!', 'success');
-        }
-
-        function highlight_errors(noLoc, noMax, noTags) {
-            if (noLoc) shake(document.getElementById('location'));
-            if (noMax) shake(document.getElementById('maxPlaces'));
-            if (noTags) shake(document.getElementById('tag-box'));
-        }
-
-        function shake(el) {
-            el.style.borderColor = 'var(--red)';
-            el.style.boxShadow = '0 0 0 3px rgba(239,68,68,.2)';
-            el.animate([
-                { transform: 'translateX(-5px)' },
-                { transform: 'translateX(5px)' },
-                { transform: 'translateX(-4px)' },
-                { transform: 'translateX(4px)' },
-                { transform: 'translateX(0)' }
-            ], { duration: 320, easing: 'ease' });
-            setTimeout(() => {
-                el.style.borderColor = '';
-                el.style.boxShadow = '';
-            }, 1800);
-        }
-
-
-
-        /* ─── Toast ─── */
-        function showToast(msg, type) {
-            const t = document.getElementById('toast');
-            t.textContent = msg || '✅ Done!';
-            t.classList.remove('error');
-            if (type === 'error') t.classList.add('error');
-            t.classList.add('show');
-            setTimeout(() => { t.classList.remove('show'); }, 3500);
-        }
-
-        /* ─── Escape HTML ─── */
-        function esc(s) {
-            return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        }
-
-        /* ─── Live status on input changes ─── */
-        document.getElementById('location').addEventListener('input', updateStatus);
-        document.getElementById('maxPlaces').addEventListener('input', updateStatus);
-
-        /* ─── Init ─── */
-        updateStatus();
-    </script>
-</body>
-
+  </body>
 </html>

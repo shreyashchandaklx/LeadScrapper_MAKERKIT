@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.vite/
+.claude/
+.apify_cache.json
+.apify_key_state.json
+.env
+dist.zip
+nul
+firebase-service-account.json
+settings.json
