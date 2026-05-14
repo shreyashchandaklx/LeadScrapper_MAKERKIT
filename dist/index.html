@@ -1,0 +1,378 @@
+<!doctype html>
+<html data-theme="paper">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Leadscrapper Pixnom</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='%23111111'/><text x='50' y='72' font-family='serif' font-size='65' font-weight='bold' fill='white' text-anchor='middle'>P</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5" type="text/css" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=renderTurnstile&render=explicit" async defer></script>
+
+    <!-- Paper Design Theme -->
+    <style>
+      [data-theme='paper'] {
+        color-scheme: light;
+        --radius-selector: 0.125rem; --radius-field: 0.25rem; --radius-box: 0.25rem;
+        --size-selector: 0.25rem; --size-field: 0.25rem;
+        --border: 1px; --depth: 0; --noise: 0;
+        --color-base-100: #FFFFFF; --color-base-200: #F9FAFB; --color-base-300: #E5E7EB;
+        --color-base-content: #111827;
+        --color-primary: #111111; --color-primary-content: #ffffff;
+        --color-secondary: #8B5CF6; --color-secondary-content: #ffffff;
+        --color-accent: #8B5CF6; --color-accent-content: #ffffff;
+        --color-neutral: #1F2937; --color-neutral-content: #F3F4F6;
+        --color-info: #6B7280; --color-info-content: #ffffff;
+        --color-success: #16A34A; --color-success-content: #ffffff;
+        --color-warning: #D97706; --color-warning-content: #ffffff;
+        --color-error: #DC2626; --color-error-content: #ffffff;
+      }
+    </style>
+
+    <!-- Login Page Styles -->
+    <style>
+      #login-page {
+        font-family: 'Inter', sans-serif;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 40px 16px;
+        position: relative;
+        background: #FFFFFF;
+      }
+      #login-page::before {
+        content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        background-image: url("data:image/svg+xml,%3Csvg width='6' height='6' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='6' height='6' fill='%23fafafa'/%3E%3Crect width='1' height='1' x='3' y='3' fill='%23e5e7eb' fill-opacity='.25'/%3E%3C/svg%3E");
+        opacity: 0.6; pointer-events: none; z-index: 0;
+      }
+      #login-page .login-badge {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: #F3F4F6; border: 1px solid #E5E7EB;
+        color: #111827; font-size: .72rem; font-weight: 500;
+        letter-spacing: .1em; text-transform: uppercase;
+        padding: 5px 14px; border-radius: 2px; margin-bottom: 18px;
+        font-family: 'Inter', sans-serif;
+      }
+      #login-page h1 {
+        font-family: 'Inter', sans-serif;
+        font-size: clamp(1.6rem, 4vw, 2.6rem); font-weight: 700; line-height: 1.22;
+        color: #111827; margin-bottom: 12px; letter-spacing: -.02em;
+      }
+      #login-page .login-subtitle { color: #6B7280; font-size: .95rem; line-height: 1.65; max-width: 520px; margin: 0 auto; }
+      #login-page .login-card {
+        background: #FFFFFF;
+        border: 1px solid #E5E7EB; border-radius: 4px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06); padding: 32px 28px;
+        width: 100%; max-width: 440px;
+      }
+      #login-page .card-title {
+        display: flex; align-items: center; gap: 10px;
+        font-family: 'Inter', sans-serif;
+        font-size: .95rem; font-weight: 600; color: #111827;
+        margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #E5E7EB;
+      }
+      #login-page .card-title .icon {
+        width: 32px; height: 32px; border-radius: 4px;
+        display: flex; align-items: center; justify-content: center;
+        background: #F3F4F6; color: #111827; font-size: 1rem;
+      }
+      #login-page .field { margin-bottom: 22px; }
+      #login-page label { display: block; font-size: .72rem; font-weight: 500; color: #6B7280; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; font-family: 'Inter', sans-serif; }
+      #login-page label .req { color: #DC2626; margin-left: 2px; }
+      #login-page input[type="text"],
+      #login-page input[type="email"] {
+        width: 100%; background: #FFFFFF;
+        border: 1px solid #D1D5DB; border-radius: 4px;
+        color: #111827; font-family: 'Inter', sans-serif; font-size: .95rem;
+        padding: 12px 14px; outline: none; transition: border-color .2s, box-shadow .2s;
+      }
+      #login-page input:focus { border-color: #111111; box-shadow: 0 0 0 2px rgba(17,17,17,.06); }
+      #login-page input::placeholder { color: #9CA3AF; }
+      #login-page .btn-login {
+        margin-top: 20px; width: 100%; padding: 14px; border: none; border-radius: 4px; cursor: pointer;
+        font-family: 'Inter', sans-serif; font-size: .9rem; font-weight: 600; letter-spacing: .04em;
+        color: #fff; background: #111111;
+        box-shadow: none; transition: background .18s;
+        position: relative; overflow: hidden;
+      }
+      #login-page .btn-login:hover { background: #333333; }
+      #login-page .btn-login:active { background: #000000; }
+      #login-page .btn-login:disabled { opacity: .4; cursor: not-allowed; }
+      #login-page .btn-login .spinner {
+        display: none; width: 18px; height: 18px;
+        border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
+        border-radius: 50%; animation: loginspin .7s linear infinite; margin: 0 auto;
+      }
+      @keyframes loginspin { to { transform: rotate(360deg); } }
+
+      /* Toast */
+      #toast {
+        position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(10px);
+        background: #111827; color: #fff; font-size: .85rem; font-weight: 500;
+        font-family: 'Inter', sans-serif;
+        padding: 12px 24px; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,.08);
+        opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s;
+        z-index: 999; white-space: nowrap;
+      }
+      #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+      #toast.error { background: #DC2626; }
+    </style>
+
+
+    <script>
+      /* Force Paper Theme */
+      document.documentElement.setAttribute('data-theme', 'paper');
+    </script>
+    <script type="module" crossorigin src="/assets/index-BlSRakX0.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DDNGOcgC.css">
+  </head>
+  <body class="bg-base-100 text-base-content overflow-x-hidden" style="font-family:'Inter',sans-serif;">
+
+    <!-- ── CAPTCHA GATE ── -->
+    <div id="captcha-page" style="font-family:'Inter',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#FFFFFF;">
+      <div style="text-align:center;margin-bottom:30px;">
+        <h2 style="font-family:'Inter',sans-serif;font-size:1.15rem;font-weight:600;color:#111827;margin-bottom:8px;letter-spacing:-.01em;">leadscrapper.pixnom.com</h2>
+        <p style="color:#6B7280;font-size:.9rem;">Checking if the site connection is secure</p>
+      </div>
+      <div id="turnstile-container"></div>
+      <p style="color:#9CA3AF;font-size:.78rem;margin-top:24px;font-family:'Inter',sans-serif;">Verifying you are human.</p>
+    </div>
+
+    <script>
+      // Detect embed mode (loaded inside Makerkit iframe)
+      var isEmbedMode = new URLSearchParams(window.location.search).get('embed') === 'true';
+      // Expose to React app so it can hide the sidebar
+      window.__EMBED_MODE__ = isEmbedMode;
+
+      function renderTurnstile() {
+        // Skip Turnstile on localhost (site key is for leadscrapper.pixnom.com only)
+        var isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+        // In embed mode, skip ALL gates (Turnstile + login) — user is already authed in Makerkit
+        if (isEmbedMode) {
+          document.getElementById('captcha-page').style.display = 'none';
+          document.getElementById('login-page').style.display = 'none';
+
+          // If user already identified on this domain, go straight to app
+          if (localStorage.getItem('loggedInUser')) {
+            document.getElementById('root').style.display = 'block';
+            return;
+          }
+
+          // First time via embed — show a minimal email prompt
+          var embedPrompt = document.getElementById('embed-email-prompt');
+          if (embedPrompt) {
+            embedPrompt.style.display = 'flex';
+          }
+          return;
+        }
+
+        if (isLocal) {
+          document.getElementById('captcha-page').style.display = 'none';
+          if (localStorage.getItem('loggedIn') === 'true') {
+            document.getElementById('root').style.display = 'block';
+            if (typeof startInactivityTimer === 'function') startInactivityTimer();
+          } else {
+            document.getElementById('login-page').style.display = '';
+          }
+          return;
+        }
+        turnstile.render('#turnstile-container', {
+          sitekey: '0x4AAAAAAC4rKkLey4Ps6zXP',
+          theme: 'light',
+          callback: function(token) {
+            document.getElementById('captcha-page').style.display = 'none';
+            if (localStorage.getItem('loggedIn') === 'true') {
+              document.getElementById('root').style.display = 'block';
+              if (typeof startInactivityTimer === 'function') startInactivityTimer();
+            } else {
+              document.getElementById('login-page').style.display = '';
+            }
+          }
+        });
+      }
+    </script>
+
+    <!-- ── EMBED EMAIL PROMPT (only shown in embed mode, first time) ── -->
+    <div id="embed-email-prompt" style="display:none;min-height:100vh;align-items:center;justify-content:center;background:#f9fafb;font-family:'Inter',sans-serif;">
+      <div style="background:#fff;border-radius:12px;padding:32px 28px;box-shadow:0 4px 24px rgba(0,0,0,.08);max-width:380px;width:90%;text-align:center;">
+        <div style="font-size:2rem;margin-bottom:12px;">🔗</div>
+        <h2 style="font-family:'Inter',sans-serif;font-size:1.1rem;font-weight:600;color:#111827;margin:0 0 6px;">Connect Your Account</h2>
+        <p style="color:#6B7280;font-size:.85rem;margin:0 0 20px;">Enter the email linked to your leads data.</p>
+        <input id="embed-email-input" type="email" placeholder="you@company.com"
+          style="width:100%;padding:10px 14px;border:1px solid #D1D5DB;border-radius:8px;font-size:.95rem;outline:none;box-sizing:border-box;margin-bottom:12px;" />
+        <button id="embed-email-btn"
+          style="width:100%;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:.95rem;font-weight:500;cursor:pointer;">
+          Continue
+        </button>
+        <p id="embed-email-error" style="color:#EF4444;font-size:.8rem;margin-top:8px;display:none;">Please enter a valid email.</p>
+      </div>
+    </div>
+    <script>
+      (function() {
+        var btn = document.getElementById('embed-email-btn');
+        var input = document.getElementById('embed-email-input');
+        var err = document.getElementById('embed-email-error');
+        if (!btn || !input) return;
+
+        function submit() {
+          var email = input.value.trim().toLowerCase();
+          if (!email || !email.includes('@')) {
+            err.style.display = 'block';
+            return;
+          }
+          err.style.display = 'none';
+          localStorage.setItem('loggedInUser', email);
+          localStorage.setItem('loggedIn', 'true');
+          document.getElementById('embed-email-prompt').style.display = 'none';
+          document.getElementById('root').style.display = 'block';
+        }
+
+        btn.addEventListener('click', submit);
+        input.addEventListener('keydown', function(e) { if (e.key === 'Enter') submit(); });
+      })();
+    </script>
+
+    <!-- ── LOGIN PAGE ── -->
+    <div id="login-page" style="display:none;">
+      <div style="text-align:center; margin-bottom:40px; position:relative; z-index:1;">
+        <div class="login-badge">Secure Access</div>
+        <h1>Leadscrapper Pixnom</h1>
+        <p class="login-subtitle">Enter your email to receive a secure login code.</p>
+      </div>
+
+      <div class="login-card" style="position:relative; z-index:1;">
+        <div class="card-title">
+          <div class="icon">&#9993;</div>
+          Authentication
+        </div>
+
+        <div id="email-step">
+          <div class="field">
+            <label for="login-email">Email Address <span class="req">*</span></label>
+            <input type="email" id="login-email" placeholder="you@example.com" autocomplete="email" />
+          </div>
+          <button class="btn-login" id="btn-send-otp" onclick="sendOtp()">
+            <div style="display:flex;align-items:center;justify-content:center;gap:10px;">
+              <span id="btn-send-otp-label">Send OTP</span>
+              <div class="spinner" id="btn-send-otp-spinner" style="margin:0;"></div>
+            </div>
+          </button>
+        </div>
+
+        <div id="otp-step" style="display:none;">
+          <div class="field">
+            <label for="login-otp">Enter OTP Code <span class="req">*</span></label>
+            <input type="text" id="login-otp" placeholder="123456" autocomplete="one-time-code" />
+          </div>
+          <button class="btn-login" id="btn-verify-otp" onclick="verifyOtp()">
+            <div style="display:flex;align-items:center;justify-content:center;gap:10px;">
+              <span id="btn-verify-otp-label">Verify OTP</span>
+              <div class="spinner" id="btn-verify-otp-spinner" style="margin:0;"></div>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── REACT APP ── -->
+    <div id="root" style="display:none;"></div>
+
+    <!-- Toast -->
+    <div id="toast"></div>
+
+    <script>
+      let generatedOtp = '';
+      let inactivityTimeout;
+
+      async function sendOtp() {
+        const email = document.getElementById('login-email').value.trim();
+        if (!email || !email.includes('@')) {
+          showToast('Please enter a valid email.', 'error');
+          return;
+        }
+
+        const btn = document.getElementById('btn-send-otp');
+        const spinner = document.getElementById('btn-send-otp-spinner');
+        btn.disabled = true;
+        spinner.style.display = 'block';
+
+        generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+          console.log("OTP:", generatedOtp);
+          alert("LOCAL MODE\nYour OTP is: " + generatedOtp);
+        }
+
+        try {
+          await fetch('send-otp.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email, otp: generatedOtp })
+          });
+          showToast('OTP sent successfully!', 'success');
+          document.getElementById('email-step').style.display = 'none';
+          document.getElementById('otp-step').style.display = 'block';
+          document.getElementById('login-otp').focus();
+        } catch (error) {
+          showToast('Using backup OTP (see console)', 'success');
+          document.getElementById('email-step').style.display = 'none';
+          document.getElementById('otp-step').style.display = 'block';
+        } finally {
+          btn.disabled = false;
+          spinner.style.display = 'none';
+        }
+      }
+
+      function verifyOtp() {
+        const otp = document.getElementById('login-otp').value.trim();
+        if (otp === generatedOtp) {
+          showToast('Success!', 'success');
+          const email = document.getElementById('login-email').value.trim().toLowerCase();
+          localStorage.setItem('loggedIn', 'true');
+          localStorage.setItem('loggedInUser', email);
+          showApp();
+        } else {
+          showToast('Invalid OTP code.', 'error');
+        }
+      }
+
+      function showApp() {
+        document.getElementById('captcha-page').style.display = 'none';
+        document.getElementById('login-page').style.display = 'none';
+        document.getElementById('root').style.display = 'block';
+        startInactivityTimer();
+      }
+
+      window.appLogout = function() {
+        localStorage.removeItem('loggedIn');
+        localStorage.removeItem('loggedInUser');
+        location.reload();
+      };
+
+      function startInactivityTimer() {
+        const reset = () => {
+          clearTimeout(inactivityTimeout);
+          inactivityTimeout = setTimeout(() => window.appLogout(), 600000);
+        };
+        ['mousemove', 'keydown', 'click', 'scroll'].forEach(e => window.addEventListener(e, reset));
+        reset();
+      }
+
+      function showToast(msg, type) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = type === 'error' ? 'show error' : 'show';
+        setTimeout(() => t.className = '', 3500);
+      }
+
+      window.addEventListener('DOMContentLoaded', () => {
+        // Always show captcha first — onTurnstileSuccess handles the rest
+      });
+    </script>
+  </body>
+</html>
