@@ -32,7 +32,20 @@ $action = $_GET['action'] ?? 'run';
 
 // ─── LOAD ENV ───────────────────────────────────────────────────────────────
 // INI_SCANNER_RAW prevents issues with Unicode characters in comments (e.g. ─)
-$envConfig = @parse_ini_file(__DIR__ . '/.env', false, INI_SCANNER_RAW) ?: [];
+$envConfig = [];
+if (file_exists(__DIR__ . '/.env')) {
+    $lines = file(__DIR__ . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        if (strpos(trim($line), '#') === 0 || strpos(trim($line), ';') === 0) continue;
+        list($name, $value) = explode('=', $line, 2) + [NULL, NULL];
+        if ($name !== NULL && $value !== NULL) {
+            $name = trim($name);
+            $value = trim($value);
+            $value = preg_replace('/^["\'](.*)["\']$/', '$1', $value);
+            $envConfig[$name] = $value;
+        }
+    }
+}
 
 // ─── BUILD TOKEN LIST ────────────────────────────────────────────────────────
 $allTokens = [];

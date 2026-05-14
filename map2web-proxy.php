@@ -23,7 +23,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-$envConfig = @parse_ini_file(__DIR__ . '/.env', false, INI_SCANNER_RAW) ?: [];
+$envConfig = [];
+if (file_exists(__DIR__ . '/.env')) {
+    $lines = file(__DIR__ . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        if (strpos(trim($line), '#') === 0 || strpos(trim($line), ';') === 0) continue;
+        list($name, $value) = explode('=', $line, 2) + [NULL, NULL];
+        if ($name !== NULL && $value !== NULL) {
+            $name = trim($name);
+            $value = trim($value);
+            // Remove surrounding quotes if present
+            $value = preg_replace('/^["\'](.*)["\']$/', '$1', $value);
+            $envConfig[$name] = $value;
+        }
+    }
+}
 
 $upstreamBase = rtrim($envConfig['MAP2WEB_ORIGIN'] ?? 'https://app.pixnom.com', '/');
 $serviceToken = trim($envConfig['MAP2WEB_SERVICE_TOKEN'] ?? '');
@@ -43,9 +57,12 @@ if ($body === false) $body = '';
 $url = $upstreamBase . '/api/map2web/' . $path;
 
 $headers = ['Content-Type: application/json', 'Accept: application/json'];
-if ($serviceToken !== '') {
-    $headers[] = 'X-Map2Web-Token: ' . $serviceToken;
+if ($serviceToken === '') {
+    http_response_code(500);
+    echo json_encode(['error' => 'MAP2WEB_SERVICE_TOKEN missing in .env']);
+    exit;
 }
+$headers[] = 'X-Map2Web-Token: ' . $serviceToken;
 
 $ch = curl_init($url);
 curl_setopt_array($ch, [
