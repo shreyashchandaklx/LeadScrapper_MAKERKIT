@@ -136,18 +136,19 @@ async function persistTiersToSupabase(placeId, urls) {
 }
 
 function getUserEmail() {
-  const stored = (localStorage.getItem('loggedInUser') || '').toLowerCase();
-  if (stored) return stored;
-  // In embed mode, the parent Makerkit page passes the email via URL param
+  // In embed mode, the parent Makerkit page passes the email via URL param.
+  // ALWAYS prefer the URL param so switching accounts works correctly.
   if (typeof window !== 'undefined') {
     const params = new URLSearchParams(window.location.search);
-    const urlEmail = (params.get('email') || '').toLowerCase();
+    const urlEmail = (params.get('email') || '').toLowerCase().trim();
     if (urlEmail) {
       localStorage.setItem('loggedInUser', urlEmail);
       return urlEmail;
     }
   }
-  return '';
+  // Fallback to localStorage (standalone mode)
+  const stored = (localStorage.getItem('loggedInUser') || '').toLowerCase().trim();
+  return stored;
 }
 
 /* ─── Storage API (Supabase via leads-proxy.php) ─── */

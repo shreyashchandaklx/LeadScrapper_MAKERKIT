@@ -5,7 +5,7 @@
     "dev": "vite",
     "build": "vite build && npm run copy-php",
     "preview": "vite preview",
-    "copy-php": "node -e \"const fs=require('fs'),path=require('path');['.env','send-otp.php','apify-proxy.php','extract-email.php','sheets-proxy.php','shorten-url.php','leads-proxy.php','map2web-proxy.php'].forEach(f=>{if(fs.existsSync(f))fs.copyFileSync(f,'dist/'+f)});fs.mkdirSync('dist/lib',{recursive:true});if(fs.existsSync('lib/supabase.php'))fs.copyFileSync('lib/supabase.php','dist/lib/supabase.php')\""
+    "copy-php": "node -e \"const fs=require('fs'),path=require('path');['.env','send-otp.php','apify-proxy.php','extract-email.php','sheets-proxy.php','shorten-url.php','leads-proxy.php','map2web-proxy.php','leadscrapper-credits-proxy.php'].forEach(f=>{if(fs.existsSync(f))fs.copyFileSync(f,'dist/'+f)});fs.mkdirSync('dist/lib',{recursive:true});['supabase.php','credits.php','supabase_cache.php'].forEach(f=>{if(fs.existsSync('lib/'+f))fs.copyFileSync('lib/'+f,'dist/lib/'+f)})\""
   },
   "dependencies": {
     "jspdf": "^4.2.1",

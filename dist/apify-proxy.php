@@ -14,6 +14,7 @@
  */
 
 require_once __DIR__ . '/lib/supabase_cache.php';
+require_once __DIR__ . '/lib/credits.php';
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
@@ -32,7 +33,20 @@ $action = $_GET['action'] ?? 'run';
 
 // ─── LOAD ENV ───────────────────────────────────────────────────────────────
 // INI_SCANNER_RAW prevents issues with Unicode characters in comments (e.g. ─)
-$envConfig = @parse_ini_file(__DIR__ . '/.env', false, INI_SCANNER_RAW) ?: [];
+$envConfig = [];
+if (file_exists(__DIR__ . '/.env')) {
+    $lines = file(__DIR__ . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        if (strpos(trim($line), '#') === 0 || strpos(trim($line), ';') === 0) continue;
+        list($name, $value) = explode('=', $line, 2) + [NULL, NULL];
+        if ($name !== NULL && $value !== NULL) {
+            $name = trim($name);
+            $value = trim($value);
+            $value = preg_replace('/^["\'](.*)["\']$/', '$1', $value);
+            $envConfig[$name] = $value;
+        }
+    }
+}
 
 // ─── BUILD TOKEN LIST ────────────────────────────────────────────────────────
 $allTokens = [];
@@ -134,6 +148,89 @@ function extractQueryFromInput(?array $input): ?array
  * Places without a placeId fall back to a synthetic key so they aren't lost.
  */
 // mergePlacesIntoCache is now handled by $supabaseCache->mergePlaces()
+
+/**
+ * Apply the credit-system slice to a place pool.
+ *
+ *   $allPlaces    — full pool for this cacheKey (after cache merge)
+ *   $billing      — runKeyMap entry: { email, keyword, locationLabel, source }
+ *                   or null when not provided (then no billing happens)
+ *   $cacheKey     — the query's cache_key
+ *   $cacheHelper  — SupabaseCache instance (unused here; reserved for future)
+ *
+ * Side effects:
+ *   - reads user's already-delivered set
+ *   - deducts credits via Makerkit for newly-delivered leads
+ *   - records new placeIds into leadscrapper_delivered
+ *   - logs the search to leadscrapper_searches
+ *
+ * Returns the array of places to send back to the browser.
+ */
+function applyCreditSlice(array $allPlaces, ?array $billing, ?string $cacheKey, $cacheHelper): array
+{
+    if (!$billing || !isset($billing['email']) || $billing['email'] === '' || !$cacheKey) {
+        // No billing context (legacy/server-internal call). Return everything.
+        return $allPlaces;
+    }
+
+    $email         = (string) $billing['email'];
+    $keyword       = (string) ($billing['keyword'] ?? '');
+    $locationLabel = (string) ($billing['locationLabel'] ?? '');
+    $source        = (string) ($billing['source'] ?? 'apify');
+
+    // 1) Fetch user's prior deliveries + current balance
+    $delivered = credits_get_delivered_ids($email, $cacheKey);
+    $balance   = credits_get_balance($email);
+    if ($balance === null) {
+        // Couldn't reach Makerkit — fall back to giving the user only their reserve
+        // (already-paid-for leads), nothing new.
+        $balance = 0.0;
+    }
+
+    // 2) Compute slice (reserve + N new, capped by balance)
+    $slice = credits_compute_slice($allPlaces, $delivered, $balance);
+    $newPlaces = $slice['newCharged'];
+    $charge    = $slice['charge'];
+
+    // 3) Charge credits for the new portion (atomic via Makerkit)
+    if (!empty($newPlaces)) {
+        $r = credits_deduct_leads($email, count($newPlaces));
+        if (empty($r['ok'])) {
+            // Deduction failed (race/insufficient). Drop the new leads from the
+            // response so we never deliver unpaid leads. Reserve still served.
+            $newPlaces  = [];
+            $charge     = 0.0;
+            $slice['places'] = $slice['fromReserve'];
+        } else {
+            // 4) Record newly delivered place_ids
+            $newIds = [];
+            foreach ($newPlaces as $p) {
+                $pid = (string) ($p['placeId'] ?? '');
+                if ($pid !== '') $newIds[] = $pid;
+            }
+            credits_record_delivered($email, $cacheKey, $newIds);
+        }
+    }
+
+    // 5) Audit log (always, even if 0 delivered — helps debug)
+    $reserveCount = count($slice['fromReserve']);
+    $newCount     = count($newPlaces);
+    $effectiveSrc = $source;
+    if ($reserveCount > 0 && $newCount > 0)       $effectiveSrc = 'mixed';
+    else if ($reserveCount > 0 && $newCount === 0) $effectiveSrc = 'reserve';
+    credits_log_search(
+        $email,
+        $keyword,
+        $locationLabel,
+        $cacheKey,
+        count($allPlaces),
+        $reserveCount + $newCount,
+        $charge,
+        $effectiveSrc
+    );
+
+    return $slice['places'];
+}
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -251,13 +348,49 @@ $token = $allTokens[$currentIndex];
 // ── ACTION: run ──────────────────────────────────────────────────────────────
 if ($action === 'run') {
 
+    // ─── Credit pre-check ────────────────────────────────────────────────────
+    // Required: requester must send `email` in the body. Without it we can't
+    // bill anybody, so reject. Reads `email` (preferred) or `userEmail`.
+    $rawEmail = (string) ($input['email'] ?? $input['userEmail'] ?? '');
+    $userEmail = strtolower(trim($rawEmail));
+    if ($userEmail === '') {
+        http_response_code(401);
+        echo json_encode(['error' => 'Missing email in request body. User must be logged in.']);
+        exit;
+    }
+
+    $balance = credits_get_balance($userEmail);
+
+    if ($balance === null) {
+        http_response_code(502);
+        echo json_encode(['error' => 'Could not verify credit balance with Makerkit']);
+        exit;
+    }
+    if ($balance < CREDIT_PER_LEAD) {
+        http_response_code(402);
+        echo json_encode([
+            'error'    => 'Insufficient credits',
+            'message'  => 'You need at least 0.01 credit to start a search. Top up at app.pixnom.com.',
+            'balance'  => $balance,
+            'required' => CREDIT_PER_LEAD,
+        ]);
+        exit;
+    }
+
     // ─── Cache check: serve from cache when possible ─────────────────────────
     $query = extractQueryFromInput($input);
     $requested = (int) ($input['maxCrawledPlacesPerSearch'] ?? 0);
     $cacheKey = null;
+    $keywordForLog = '';
+    $locationLabel = '';
     if ($query !== null) {
         [$kw, $loc] = $query;
         $cacheKey = buildCacheKey($kw, $loc);
+        $keywordForLog = $kw;
+        // Human-readable label for the audit log
+        $locationLabel = (strpos($loc, 'zip:') === 0)
+            ? 'ZIP ' . substr($loc, 4)
+            : $loc;
 
         $entry = $supabaseCache->getQuery($cacheKey);
 
@@ -266,12 +399,23 @@ if ($action === 'run') {
             && isset($entry['places'], $entry['scrapedAt'])
             && (time() - (int) $entry['scrapedAt']) < CACHE_TTL_SECONDS
         ) {
-            // Cache HIT — synthesize an Apify-shaped run response
+            // Cache HIT — synthesize an Apify-shaped run response.
+            // Stash billing metadata in runKeyMap so ?action=dataset knows who/what to charge.
             $cachedRunId = 'cached-' . substr(md5($cacheKey . microtime(true)), 0, 16);
             $supabaseCache->setPendingServe($cachedRunId, [
                 'cacheKey'  => $cacheKey,
                 'createdAt' => time(),
             ]);
+            $runKeyMap[$cachedRunId] = [
+                'keyIndex'      => -1,
+                'cacheKey'      => $cacheKey,
+                'email'         => $userEmail,
+                'keyword'       => $keywordForLog,
+                'locationLabel' => $locationLabel,
+                'source'        => 'cache',
+            ];
+            $runKeyMapExpiry[$cachedRunId] = time();
+            saveState($stateFile, $currentIndex, $runKeyMap, $runKeyMapExpiry);
 
             http_response_code(201);
             echo json_encode([
@@ -283,6 +427,7 @@ if ($action === 'run') {
                 ],
                 '_cached' => true,
                 '_cachedCount' => count($entry['places']),
+                '_balance' => $balance,
             ]);
             exit;
         }
@@ -295,7 +440,12 @@ if ($action === 'run') {
     // Remember which key index is being used for THIS run
     $runStartKeyIndex = $currentIndex;
 
-    $resp = apifyRequest('POST', $url, $token, $allTokens, $currentIndex, $stateFile, $inputJSON);
+    // Strip leadscrapper-only fields before forwarding to Apify
+    $apifyInput = $input;
+    unset($apifyInput['email'], $apifyInput['userEmail']);
+    $apifyInputJson = json_encode($apifyInput);
+
+    $resp = apifyRequest('POST', $url, $token, $allTokens, $currentIndex, $stateFile, $apifyInputJson);
 
     // If run started successfully, map the runId to the key that started it
     // and advance to the next key for the NEXT query (per-query rotation)
@@ -304,10 +454,15 @@ if ($action === 'run') {
         $runId = $runData['data']['id'] ?? null;
 
         if ($runId) {
-            // Store keyIndex + cacheKey so dataset fetch can merge results back into cache
+            // Store keyIndex + cacheKey + billing metadata so dataset fetch can
+            // (1) merge results back into cache and (2) charge the right user.
             $runKeyMap[$runId] = [
-                'keyIndex' => $currentIndex,
-                'cacheKey' => $cacheKey,
+                'keyIndex'      => $currentIndex,
+                'cacheKey'      => $cacheKey,
+                'email'         => $userEmail,
+                'keyword'       => $keywordForLog,
+                'locationLabel' => $locationLabel,
+                'source'        => 'apify',
             ];
             $runKeyMapExpiry[$runId] = time();
         }
@@ -386,38 +541,48 @@ if ($action === 'run') {
             $places = $entry['places'] ?? [];
         }
 
-        $sliced = array_slice($places, $offset, $limit);
+        // Credit-slice for the user that initiated this cached serve
+        $billing = $runKeyMap[$runId] ?? $runKeyMap[$datasetId] ?? null;
+        $sliced  = applyCreditSlice($places, $billing, $cacheKey, $supabaseCache);
 
         // Clean up the pendingServe — dataset fetched, query is done
         $supabaseCache->deletePendingServe($datasetId);
+        if (isset($runKeyMap[$runId]))      unset($runKeyMap[$runId], $runKeyMapExpiry[$runId]);
+        if (isset($runKeyMap[$datasetId]))  unset($runKeyMap[$datasetId], $runKeyMapExpiry[$datasetId]);
+        saveState($stateFile, $currentIndex, $runKeyMap, $runKeyMapExpiry);
 
+        // Honor the caller's offset/limit on the post-credit list
+        $page = array_slice($sliced, $offset, $limit);
         http_response_code(200);
-        echo json_encode($sliced);
+        echo json_encode($page);
         exit;
     }
 
     // ─── Live Apify dataset fetch ────────────────────────────────────────────
     $cacheKeyForMerge = null;
+    $billing          = null;
 
     // Use the same key that started this run (if runId provided)
     if ($runId !== '' && isset($runKeyMap[$runId])) {
         $entry = $runKeyMap[$runId];
         if (is_array($entry)) {
-            $mappedIndex = (int) ($entry['keyIndex'] ?? -1);
+            $mappedIndex      = (int) ($entry['keyIndex'] ?? -1);
             $cacheKeyForMerge = $entry['cacheKey'] ?? null;
+            $billing          = $entry;
         } else {
             $mappedIndex = (int) $entry;
         }
         if ($mappedIndex >= 0 && $mappedIndex < count($allTokens)) {
             $token = $allTokens[$mappedIndex];
         }
-        // Clean up the mapping — dataset fetched means query is done
-        unset($runKeyMap[$runId], $runKeyMapExpiry[$runId]);
-        saveState($stateFile, $currentIndex, $runKeyMap, $runKeyMapExpiry);
     }
 
+    // Always fetch the FULL Apify dataset (offset 0, large limit) so we can
+    // merge into the shared cache and apply credit slicing against the full
+    // pool. The original $limit/$offset are reapplied to the final result.
+    $fetchLimit = 5000;
     $url = "https://api.apify.com/v2/datasets/$datasetId/items"
-        . "?format=json&limit=$limit&offset=$offset&token={TOKEN}";
+        . "?format=json&limit=$fetchLimit&offset=0&token={TOKEN}";
 
     $resp = apifyRequest('GET', $url, $token, $allTokens, $currentIndex, $stateFile);
 
@@ -438,10 +603,51 @@ if ($action === 'run') {
         if (!empty($fresh)) {
             $supabaseCache->mergePlaces($cacheKeyForMerge, $fresh);
         }
+
+        // Credit-slice against the FULL pool (merged cache).
+        $entry  = $supabaseCache->getQuery($cacheKeyForMerge);
+        $pool   = $entry['places'] ?? $fresh;
+        $sliced = applyCreditSlice($pool, $billing, $cacheKeyForMerge, $supabaseCache);
+
+        // Clean up runKeyMap now that we've billed
+        if (isset($runKeyMap[$runId])) unset($runKeyMap[$runId], $runKeyMapExpiry[$runId]);
+        saveState($stateFile, $currentIndex, $runKeyMap, $runKeyMapExpiry);
+
+        $page = array_slice($sliced, $offset, $limit);
+        http_response_code(200);
+        echo json_encode($page);
+        exit;
     }
 
+    // Non-success: pass through Apify's response unchanged
+    if (isset($runKeyMap[$runId])) {
+        unset($runKeyMap[$runId], $runKeyMapExpiry[$runId]);
+        saveState($stateFile, $currentIndex, $runKeyMap, $runKeyMapExpiry);
+    }
     http_response_code($resp['httpCode']);
     echo $resp['result'];
+
+    // ── ACTION: balance ───────────────────────────────────────────────────────────
+} elseif ($action === 'balance') {
+
+    $email = strtolower(trim($_GET['email'] ?? ''));
+    if ($email === '') {
+        http_response_code(400);
+        echo json_encode(['error' => 'Missing email query param']);
+        exit;
+    }
+    $bal = credits_get_balance($email);
+    if ($bal === null) {
+        http_response_code(502);
+        echo json_encode(['error' => 'Could not reach credit service']);
+        exit;
+    }
+    echo json_encode([
+        'email'         => $email,
+        'balance'       => $bal,
+        'creditPerLead' => CREDIT_PER_LEAD,
+        'leadsPerCredit'=> LEADS_PER_CREDIT,
+    ]);
 
     // ── ACTION: status (bonus — returns which key slot is active) ─────────────────
 } elseif ($action === 'status') {
@@ -477,7 +683,7 @@ if ($action === 'run') {
     http_response_code(400);
     echo json_encode([
         'error' => 'Invalid action',
-        'validActions' => ['run', 'check', 'dataset', 'status', 'cache'],
+        'validActions' => ['run', 'check', 'dataset', 'status', 'cache', 'balance'],
     ]);
 }
 ?>
