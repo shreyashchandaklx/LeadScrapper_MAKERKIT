@@ -214,8 +214,11 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
   const [visibleCols, setVisibleCols] = useState(DEFAULT_VISIBLE);
   const [showColPicker, setShowColPicker] = useState(false);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 25;
+
   /* Row selection state */
-  const [selectedRows, setSelectedRows] = useState(new Set()); // Stores indices of selected rows
+  const [selectedRows, setSelectedRows] = useState(new Set()); // Stores placeId/title of selected rows
 
   /* Email extraction state */
   const [emailMap, setEmailMap] = useState({}); // Stores emails found per placeId/title
@@ -382,9 +385,17 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
         setBalance(typeof errorData.balance === 'number' ? errorData.balance : 0); // Update balance shown
         throw new Error(`Insufficient credits (balance ${errorData.balance ?? 0}). Top up at app.pixnom.com to continue.`);
       }
+      if (runResponse.status === 503) { // Apify keys exhausted
+        const errorData = await runResponse.json().catch(() => ({}));
+        throw new Error("Server capacity reached (Apify keys exhausted). Please contact support or try again later.");
+      }
       if (!runResponse.ok) { // Other API errors
-        const errorData = await runResponse.json();
-        throw new Error(errorData?.error?.message || errorData?.error || `Failed to start Apify run (${runResponse.status})`);
+        const errorData = await runResponse.json().catch(() => ({}));
+        const msg = errorData?.error?.message || errorData?.error || errorData?.message || `Failed to start Apify run (${runResponse.status})`;
+        if (msg.includes('Apify API keys exhausted')) {
+          throw new Error("Server capacity reached (Apify keys exhausted). Please contact support or try again later.");
+        }
+        throw new Error(msg);
       }
 
       const runData = await runResponse.json();
@@ -441,29 +452,25 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
         throw new Error(apifyResults.error?.message || apifyResults.message || apifyResults.error || 'Dataset fetch failed');
       }
 
-      // Ensure results are an array
-      let places = Array.isArray(apifyResults) ? apifyResults : (apifyResults.items || apifyResults.data || []);
-      if (!Array.isArray(places)) {
-        throw new Error('Apify Dataset API returned an invalid non-array format.');
-      }
-
-      // Add rank to each place if missing (used for sorting/display)
+      const rawData = apifyResults;
+      const envelope = (rawData && typeof rawData === 'object' && !Array.isArray(rawData))
+        ? rawData
+        : { places: Array.isArray(rawData) ? rawData : [], charged: 0, delivered: 0, extrasRemaining: 0, source: 'unknown' };
+      const places = Array.isArray(envelope.places) ? envelope.places : (envelope.items || envelope.data || []);
       places.forEach((p, i) => { if (!p.rank) p.rank = i + 1; });
 
-      // Calculate estimated charge and update charge info state
-      const deliveredCount = places.length;
-      const estimatedCharge = Number((deliveredCount * 0.01).toFixed(2)); // 0.01 credit per lead
       setChargeInfo({
-        delivered: deliveredCount,
-        charged: estimatedCharge,
-        cached, // Indicate if data came from cache
+        delivered:       envelope.delivered ?? places.length,
+        charged:         Number(envelope.charged ?? 0),
+        extrasRemaining: envelope.extrasRemaining ?? 0,
+        source:          envelope.source ?? (cached ? 'cache' : 'apify'),
+        cached,
       });
-      refreshBalance(); // Fetch authoritative balance after potential deduction
+      setResults(places);
+      setCurrentPage(1);
+      refreshBalance();
 
-      setResults(places); // Update results state
-      setProgress(cached
-        ? `Found ${places.length} businesses (served from cache) — Charged ${estimatedCharge.toFixed(2)} credits.`
-        : `Found ${places.length} businesses — Charged ${estimatedCharge.toFixed(2)} credits.`);
+      setProgress(`Found ${places.length} businesses — Charged ${(envelope.charged ?? 0).toFixed(2)} credits.`);
 
       // Start background email extraction for found places
       startEmailExtraction(places);
@@ -528,6 +535,13 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
     if (sortKey === key) setSortDir(direction => direction === 'asc' ? 'desc' : 'asc'); // Toggle direction if same key
     else { setSortKey(key); setSortDir('asc'); } // Reset direction if new key
   };
+
+  const totalPages = Math.max(1, Math.ceil(sortedResults.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedResults = useMemo(
+    () => sortedResults.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [sortedResults, safePage]
+  );
 
   /* Function to trigger CSV download */
   const downloadCSV = (places) => {
@@ -615,19 +629,20 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
       setSelectedRows(new Set()); // Deselect all if all are currently selected
     } else {
       // Select all rows
-      setSelectedRows(new Set(sortedResults.map((_, index) => index)));
+      setSelectedRows(new Set(sortedResults.map(place => place.placeId || place.title)));
     }
   };
 
   /* Save selected leads via bulk API call */
   const saveSelectedLeads = () => {
     const leadsToSave = [];
-    selectedRows.forEach(index => { // Iterate through selected indices
-      const place = sortedResults[index];
-      const lead = apifyToLead(place, index);
-      const emails = emailMap[place.placeId || place.title] || [];
-      if (emails.length > 0) lead.email = emails[0]; // Assign first extracted email
-      if (!savedLeadIds.includes(lead.id)) leadsToSave.push(lead); // Add only if not already saved
+    sortedResults.forEach((place, index) => {
+      if (selectedRows.has(place.placeId || place.title)) {
+        const lead = apifyToLead(place, index);
+        const emails = emailMap[place.placeId || place.title] || [];
+        if (emails.length > 0) lead.email = emails[0];
+        if (!savedLeadIds.includes(lead.id)) leadsToSave.push(lead);
+      }
     });
     if (leadsToSave.length > 0 && typeof onBulkSaveLeads === 'function') {
       onBulkSaveLeads(leadsToSave); // Call parent handler
@@ -947,12 +962,17 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
 
         {/* Charging Information Display */}
         {chargeInfo && (
-          <div className="mt-3 flex items-center gap-2 text-xs">
+          <div className="mt-3 flex items-center gap-2 text-xs flex-wrap">
             <CheckCircle className="w-3.5 h-3.5 text-green-500" />
             <span className="text-base-content/70">
               Charged <b>{chargeInfo.charged.toFixed(2)}</b> credit{chargeInfo.charged === 1 ? '' : 's'} for <b>{chargeInfo.delivered}</b> lead{chargeInfo.delivered === 1 ? '' : 's'}
-              {chargeInfo.cached ? ' (served from cache)' : ''}
+              {chargeInfo.source === 'cache' && ' (from cache)'}
+              {chargeInfo.source === 'extras' && ' (from your queue)'}
+              {chargeInfo.source === 'mixed' && ' (queue + cache)'}
             </span>
+            {chargeInfo.extrasRemaining > 0 && (
+              <span className="text-base-content/60">· <b>{chargeInfo.extrasRemaining}</b> extras queued — re-run this query to load more</span>
+            )}
           </div>
         )}
 
@@ -1107,12 +1127,13 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
                 </tr>
               </thead>
               <tbody>
-                {/* Render table rows for sorted results */}
-                {sortedResults.map((place, index) => {
+                {/* Render table rows for paginated results */}
+                {paginatedResults.map((place, index) => {
                   // Convert Apify place data to lead object, get emails, check if saved
                   const lead = apifyToLead(place, index);
                   const isSaved = savedLeadIds.includes(lead.id);
-                  const isSelected = selectedRows.has(index);
+                  const placeKey = place.placeId || place.title;
+                  const isSelected = selectedRows.has(placeKey);
                   return (
                     <tr key={place.placeId || index}
                       className={`hover:bg-base-200/30 transition-colors border-b border-base-200 last:border-0 ${isSelected ? 'bg-base-200/40' : ''}`}>
@@ -1121,7 +1142,7 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
                         <input type="checkbox" checked={isSelected}
                           onChange={() => setSelectedRows(prev => { // Toggle selection state
                             const next = new Set(prev);
-                            next.has(index) ? next.delete(index) : next.add(index);
+                            next.has(placeKey) ? next.delete(placeKey) : next.add(placeKey);
                             return next;
                           })}
                           className="checkbox checkbox-xs" />
@@ -1156,6 +1177,19 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
               </tbody>
             </table>
           </div>
+          
+          {/* Pagination Controls */}
+          {sortedResults.length > PAGE_SIZE && (
+            <div className="flex items-center justify-center gap-1 py-3 text-sm bg-base-200/50 border-t border-base-300">
+              <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
+                      className="btn btn-sm btn-ghost">Prev</button>
+              <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
+                      className="btn btn-sm btn-ghost">Next</button>
+              <span className="ml-3 text-base-content/50">
+                Page {safePage} of {totalPages} · {sortedResults.length} leads
+              </span>
+            </div>
+          )}
         </div>
       )}
 

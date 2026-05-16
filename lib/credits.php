@@ -1,3 +1,5 @@
+<?php
+
 /**
  * lib/credits.php
  *
@@ -25,7 +27,7 @@ const CREDIT_PER_LEAD   = 0.01;
 // Env loader (kept independent of apify-proxy.php's loader so this file is
 // usable standalone).
 // ---------------------------------------------------------------------------
-function credits_env(): array
+function credits_env()
 {
     static $env = null;
     if ($env !== null) return $env;
@@ -47,7 +49,7 @@ function credits_env(): array
     return $env;
 }
 
-function credits_makerkit_origin(): string
+function credits_makerkit_origin()
 {
     $env = credits_env();
     return rtrim(
@@ -61,7 +63,7 @@ function credits_makerkit_origin(): string
 /**
  * Low-level: call Makerkit credit endpoint. Returns ['status'=>int, 'json'=>array|null].
  */
-function credits_call_makerkit(string $method, string $path, ?array $body = null): array
+function credits_call_makerkit($method, $path, $body = null)
 {
     $base  = credits_makerkit_origin();
     $url   = $base . $path;
@@ -101,7 +103,7 @@ function credits_call_makerkit(string $method, string $path, ?array $body = null
 /**
  * Returns the user's current credit balance as a float, or null on error.
  */
-function credits_get_balance(string $email): ?float
+function credits_get_balance($email)
 {
     if ($email === '') return null;
     $r = credits_call_makerkit(
@@ -120,7 +122,7 @@ function credits_get_balance(string $email): ?float
  * On 402 (insufficient) ok=false and the caller MUST refund/not-deliver the
  * leads it would have given.
  */
-function credits_deduct_leads(string $email, int $leadCount): array
+function credits_deduct_leads($email, $leadCount)
 {
     // *** NOTE: This function is being deprecated. Use the new superset logic below. ***
 
@@ -142,7 +144,7 @@ function credits_deduct_leads(string $email, int $leadCount): array
 /**
  * Returns array of place_ids this user has already received for cacheKey.
  */
-function credits_get_delivered_ids(string $email, string $cacheKey): array
+function credits_get_delivered_ids($email, $cacheKey)
 {
     $query = 'select=place_id'
         . '&user_email=eq.' . rawurlencode($email)
@@ -162,7 +164,7 @@ function credits_get_delivered_ids(string $email, string $cacheKey): array
 /**
  * Record place_ids as delivered to this user for cacheKey. Idempotent (upserts).
  */
-function credits_record_delivered(string $email, string $cacheKey, array $placeIds): void
+function credits_record_delivered($email, $cacheKey, $placeIds)
 {
     if (empty($placeIds)) return;
     $rows = [];
@@ -185,7 +187,7 @@ function credits_record_delivered(string $email, string $cacheKey, array $placeI
  * Returns array of place_ids in the user's extras queue for this cacheKey.
  * Ordered FIFO.
  */
-function credits_get_extras(?string $email, string $cacheKey): array
+function credits_get_extras( $email, $cacheKey)
 {
     if (empty($email)) return [];
     $query = 'select=place_id'
@@ -207,7 +209,7 @@ function credits_get_extras(?string $email, string $cacheKey): array
 /**
  * Remove the given place_ids from the user's extras queue for this cacheKey.
  */
-function credits_dequeue_extras(?string $email, string $cacheKey, array $placeIds): void
+function credits_dequeue_extras( $email, $cacheKey, $placeIds)
 {
     if (empty($email) || empty($placeIds)) return;
 
@@ -225,9 +227,9 @@ function credits_dequeue_extras(?string $email, string $cacheKey, array $placeId
 /**
  * Add place_ids to the user's extras queue for this cacheKey.
  */
-function credits_enqueue_extras(?string $email, string $cacheKey, array $placeIds): int
+function credits_enqueue_extras($email, $cacheKey, $placeIds)
 {
-    if (empty($email) || empty($placeIds)) return 0;
+    if (empty($email) || empty($placeIds)) return [];
     $rows = [];
     foreach ($placeIds as $pid) {
         if ($pid === '' || $pid === null) continue;
@@ -237,10 +239,31 @@ function credits_enqueue_extras(?string $email, string $cacheKey, array $placeId
             'place_id'   => (string) $pid,
         ];
     }
-    if (empty($rows)) return 0;
+    if (empty($rows)) return [];
     // Insert on conflict - if a row already exists we just ignore it.
     // The PK (user_email, cache_key, place_id) prevents duplicates.
-    return sb_insert('leadscrapper_extras', $rows);
+    return sb_insert('leadscrapper_extras', $rows, 'user_email,cache_key,place_id');
+}
+
+/**
+ * Returns the number of unserved leads in the user's extras queue for this cacheKey.
+ */
+function credits_get_extras_count($email, $cacheKey)
+{
+    if (empty($email)) return 0;
+    
+    $q = "user_email=eq." . rawurlencode($email) . "&cache_key=eq." . rawurlencode($cacheKey) . "&select=count";
+    $res = sb_select('leadscrapper_extras', $q);
+    
+    // PostgREST count query returns a scalar count if we use 'select=count' 
+    // or sometimes an array [{count: N}]. 
+    // My sb_select implementation returns ['json' => ...]
+    
+    if (isset($res['json'][0]['count'])) {
+        return (int) $res['json'][0]['count'];
+    }
+    
+    return 0;
 }
 
 /**
@@ -248,15 +271,15 @@ function credits_enqueue_extras(?string $email, string $cacheKey, array $placeId
  *  $source ∈ {'apify','cache','extras','mixed','failed-charge'}
  */
 function credits_log_search(
-    ?string $email,
-    string $keyword,
-    string $locationLabel,
-    string $cacheKey,
-    int $poolSize,
-    int $deliveredCount,
-    float $creditsCharged,
-    string $source
-): void {
+    $email,
+    $keyword,
+    $locationLabel,
+    $cacheKey,
+    $poolSize,
+    $deliveredCount,
+    $creditsCharged,
+    $source
+) {
     sb_insert('leadscrapper_searches', [[
         'user_email'      => $email,
         'keyword'         => $keyword,
@@ -293,11 +316,11 @@ function credits_log_search(
  *   - 'poolSize'         => int, total number of leads available in $allPlaces
  */
 function credits_compute_slice(
-    array $allPlaces,
-    array $deliveredIDs,
-    array $extrasIDs,
-    float $balance
-): array
+    $allPlaces,
+    $deliveredIDs,
+    $extrasIDs,
+    $balance
+)
 {
     // Build lookups for efficiency
     $byId = [];
@@ -308,38 +331,48 @@ function credits_compute_slice(
     $deliveredSet = array_flip($deliveredIDs);
     $extrasSet    = array_flip($extrasIDs);
 
-    // 1. Separate IDs into categories: reserve (already delivered), extras (in queue), pool (newly available)
-    $reserveIDs = [];
-    $extrasAvailableIDs = []; // IDs in $extrasIDs that are actually present in $allPlaces now
     $poolIDs = [];
-
-    foreach ($allPlaces as $pid => $place) {
-        if (isset($ ExtrasSet[$pid])) {
-            $extrasAvailableIDs[] = $pid;
-        } elseif (!isset($deliveredSet[$pid])) {
+    foreach ($byId as $pid => $place) {
+        if (!isset($deliveredSet[$pid])) {
             $poolIDs[] = $pid;
-        } else {
-             $reserveIDs[] = $pid;
         }
     }
 
-    // 2. Combine: serve from extras queue first, then from the pool.
-    $deliverNowIDs = array_merge(
-        array_intersect($extrasIDs, $extrasAvailableIDs), // Only use extras that are still valid
-        $poolIDs
-    );
+    // Deliverable IDs: any in extras queue FIRST, then any new pool IDs
+    $deliverableIDs = [];
+    
+    // First, valid extras
+    foreach ($extrasIDs as $pid) {
+        if (isset($byId[$pid]) && !isset($deliveredSet[$pid])) {
+            $deliverableIDs[] = $pid;
+        }
+    }
+    
+    $deliverableSet = array_flip($deliverableIDs);
+    
+    // Next, any new pool IDs not already in extras
+    foreach ($poolIDs as $pid) {
+        if (!isset($deliverableSet[$pid])) {
+            $deliverableIDs[] = $pid;
+        }
+    }
 
     // 3. Cap results: max 100 per search, then by balance.
     $maxPerSearch = 100;
-    $deliverNowIDs = array_slice($deliverNowIDs, 0, $maxPerSearch);
-
     $maxPayable = (int) floor($balance * LEADS_PER_CREDIT + 1e-9); // Round down
-    $finalDeliverIDs = array_slice($deliverNowIDs, 0, $maxPayable);
+    $limit = min($maxPerSearch, $maxPayable);
+
+    $finalDeliverIDs = array_slice($deliverableIDs, 0, $limit);
     $charge = round(count($finalDeliverIDs) * CREDIT_PER_LEAD, 2);
 
     // 4. Determine which extras were used and what new overflow needs to be queued.
     $extrasUsed = array_intersect($extrasIDs, $finalDeliverIDs);
     $newOverflowIDs = array_diff($poolIDs, $finalDeliverIDs);
+    
+    // Remove any already in extras
+    $newOverflowIDs = array_filter($newOverflowIDs, function($id) use ($extrasSet) {
+        return !isset($extrasSet[$id]);
+    });
 
     // 5. Calculate remaining extras.
     $extrasRemaining = count($extrasIDs) - count($extrasUsed) + count($newOverflowIDs);

@@ -1,4 +1,21 @@
 <?php
+error_reporting(E_ALL);
+ini_set('display_errors', '0');
+set_error_handler(function($errno, $errstr, $errfile, $errline) {
+    if (!(error_reporting() & $errno)) return;
+    header('Content-Type: application/json');
+    http_response_code(500);
+    echo json_encode(['error' => "PHP Error [$errno]: $errstr in $errfile:$errline"]);
+    exit;
+});
+register_shutdown_function(function() {
+    $error = error_get_last();
+    if ($error !== null && ($error['type'] === E_ERROR || $error['type'] === E_PARSE || $error['type'] === E_COMPILE_ERROR)) {
+        header('Content-Type: application/json');
+        http_response_code(500);
+        echo json_encode(['error' => "PHP Fatal Error: " . $error['message'] . " in " . $error['file'] . ":" . $error['line']]);
+    }
+});
 /**
  * apify-proxy.php
  * Proxies Apify API calls with automatic API key rotation.
@@ -110,7 +127,7 @@ $supabaseCache = getSupabaseCache();
 /**
  * Build cache key from keyword and location
  */
-function buildCacheKey(string $keyword, string $location): string
+function buildCacheKey($keyword, $location)
 {
     return strtolower(trim($keyword)) . '|' . strtolower(trim($location));
 }
@@ -120,7 +137,7 @@ function buildCacheKey(string $keyword, string $location): string
  * Supports both locationQuery-based and postalCode-based searches.
  * Returns null if keyword is missing so the caller can skip caching.
  */
-function extractQueryFromInput(?array $input): ?array
+function extractQueryFromInput($input)
 {
     if (!is_array($input)) return null;
     $keyword = '';
@@ -166,11 +183,17 @@ function extractQueryFromInput(?array $input): ?array
  *
  * Returns the array of places to send back to the browser.
  */
-function applyCreditSlice(array $allPlaces, ?array $billing, ?string $cacheKey, $cacheHelper): array
+function applyCreditSlice($allPlaces, $billing, $cacheKey, $cacheHelper)
 {
     if (!$billing || !isset($billing['email']) || $billing['email'] === '' || !$cacheKey) {
         // No billing context (legacy/server-internal call). Return everything.
-        return $allPlaces;
+        return [
+            'places'          => $allPlaces,
+            'charged'         => 0,
+            'delivered'       => count($allPlaces),
+            'extrasRemaining' => 0,
+            'source'          => 'unknown'
+        ];
     }
 
     $email         = (string) $billing['email'];
@@ -178,33 +201,34 @@ function applyCreditSlice(array $allPlaces, ?array $billing, ?string $cacheKey, 
     $locationLabel = (string) ($billing['locationLabel'] ?? '');
     $source        = (string) ($billing['source'] ?? 'apify');
 
-    // 1) Fetch user's prior deliveries + current balance
+    // 1) Fetch user's prior deliveries + extras + current balance
     $delivered = credits_get_delivered_ids($email, $cacheKey);
+    $extras    = credits_get_extras($email, $cacheKey);
     $balance   = credits_get_balance($email);
     if ($balance === null) {
-        // Couldn't reach Makerkit — fall back to giving the user only their reserve
-        // (already-paid-for leads), nothing new.
+        // Couldn't reach Makerkit — fall back to giving the user nothing new
         $balance = 0.0;
     }
 
-    // 2) Compute slice (reserve + N new, capped by balance)
-    $slice = credits_compute_slice($allPlaces, $delivered, $balance);
-    $newPlaces = $slice['newCharged'];
-    $charge    = $slice['charge'];
+    // 2) Compute slice
+    $slice = credits_compute_slice($allPlaces, $delivered, $extras, $balance);
+    $placesToDeliver = $slice['places'];
+    $charge          = $slice['charged'];
 
     // 3) Charge credits for the new portion (atomic via Makerkit)
-    if (!empty($newPlaces)) {
-        $r = credits_deduct_leads($email, count($newPlaces));
+    if ($charge > 0) {
+        // deduct_leads takes lead count (1 lead = 0.01 credit). 
+        // $charge / 0.01 = number of leads
+        $leadCount = (int) round($charge / 0.01);
+        $r = credits_deduct_leads($email, $leadCount);
         if (empty($r['ok'])) {
-            // Deduction failed (race/insufficient). Drop the new leads from the
-            // response so we never deliver unpaid leads. Reserve still served.
-            $newPlaces  = [];
-            $charge     = 0.0;
-            $slice['places'] = $slice['fromReserve'];
+            // Deduction failed.
+            $placesToDeliver = [];
+            $charge = 0.0;
         } else {
             // 4) Record newly delivered place_ids
             $newIds = [];
-            foreach ($newPlaces as $p) {
+            foreach ($placesToDeliver as $p) {
                 $pid = (string) ($p['placeId'] ?? '');
                 if ($pid !== '') $newIds[] = $pid;
             }
@@ -212,24 +236,51 @@ function applyCreditSlice(array $allPlaces, ?array $billing, ?string $cacheKey, 
         }
     }
 
-    // 5) Audit log (always, even if 0 delivered — helps debug)
-    $reserveCount = count($slice['fromReserve']);
-    $newCount     = count($newPlaces);
-    $effectiveSrc = $source;
-    if ($reserveCount > 0 && $newCount > 0)       $effectiveSrc = 'mixed';
-    else if ($reserveCount > 0 && $newCount === 0) $effectiveSrc = 'reserve';
+    // 5) Manage Extras queue
+    if (!empty($slice['extrasUsed'])) {
+        credits_dequeue_extras($email, $cacheKey, $slice['extrasUsed']);
+    }
+    if (!empty($slice['newOverflow'])) {
+        credits_enqueue_extras($email, $cacheKey, $slice['newOverflow']);
+    }
+
+    // 6) Audit log (always, even if 0 delivered — helps debug)
+    // Determine effective source by composition of the delivered slice:
+    //   - all from extras queue  → 'extras'
+    //   - all new from pool      → keep original (apify or cache)
+    //   - mix of both            → 'mixed'
+    $deliveredCount = count($placesToDeliver);
+    $extrasCount    = count($slice['extrasUsed'] ?? []);
+    $newFromPool    = $deliveredCount - $extrasCount;
+
+    if ($deliveredCount === 0) {
+        $effectiveSrc = $source; // nothing delivered, keep run source for audit
+    } else if ($extrasCount > 0 && $newFromPool > 0) {
+        $effectiveSrc = 'mixed';
+    } else if ($extrasCount > 0 && $newFromPool === 0) {
+        $effectiveSrc = 'extras';
+    } else {
+        $effectiveSrc = $source; // apify or cache — fresh-to-user leads only
+    }
+    
     credits_log_search(
         $email,
         $keyword,
         $locationLabel,
         $cacheKey,
         count($allPlaces),
-        $reserveCount + $newCount,
+        count($placesToDeliver),
         $charge,
         $effectiveSrc
     );
 
-    return $slice['places'];
+    return [
+        'places'          => $placesToDeliver,
+        'charged'         => $charge,
+        'delivered'       => count($placesToDeliver),
+        'extrasRemaining' => $slice['extrasRemaining'],
+        'source'          => $effectiveSrc
+    ];
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -237,7 +288,7 @@ function applyCreditSlice(array $allPlaces, ?array $billing, ?string $cacheKey, 
 /**
  * Persist the full key state (currentIndex + runKeyMap) to disk.
  */
-function saveState(string $stateFile, int $index, array $runKeyMap, array $runKeyMapExpiry): void
+function saveState($stateFile, $index, $runKeyMap, $runKeyMapExpiry)
 {
     file_put_contents($stateFile, json_encode([
         'currentIndex' => $index,
@@ -247,7 +298,7 @@ function saveState(string $stateFile, int $index, array $runKeyMap, array $runKe
 }
 
 // Legacy alias kept so apifyRequest() still compiles
-function saveKeyIndex(string $stateFile, int $index): void
+function saveKeyIndex($stateFile, $index)
 {
     // Read existing state to preserve runKeyMap during error-based rotation
     $existing = json_decode(@file_get_contents($stateFile) ?: '{}', true) ?: [];
@@ -261,7 +312,7 @@ function saveKeyIndex(string $stateFile, int $index): void
  * 403 = platform-feature-disabled or forbidden (FIX: was missing)
  * 429 = rate limited
  */
-function shouldRotate(int $httpCode): bool
+function shouldRotate($httpCode)
 {
     return in_array($httpCode, [402, 403, 429], true);
 }
@@ -269,25 +320,25 @@ function shouldRotate(int $httpCode): bool
 /**
  * Execute an Apify API request with automatic key rotation on quota errors.
  *
- * @param string   $method       'GET' or 'POST'
- * @param string   $urlTemplate  URL with {TOKEN} placeholder
- * @param string   $token        Starting token
- * @param array    $allTokens    Full token list
- * @param int      $currentIndex Current index (passed by reference for rotation)
- * @param string   $stateFile    Path to key-state persistence file
+ * @param $method       'GET' or 'POST'
+ * @param $urlTemplate  URL with {TOKEN} placeholder
+ * @param $token        Starting token
+ * @param $allTokens    Full token list
+ * @param $currentIndex Current index (passed by reference for rotation)
+ * @param $stateFile    Path to key-state persistence file
  * @param string|null $postData  JSON body for POST requests
  *
- * @return array{result: string, httpCode: int}
+ * @return array{result, httpCode}
  */
 function apifyRequest(
-    string $method,
-    string $urlTemplate,
-    string $token,
-    array $allTokens,
-    int &$currentIndex,
-    string $stateFile,
-    ?string $postData = null
-): array {
+    $method,
+    $urlTemplate,
+    $token,
+    $allTokens,
+    &$currentIndex,
+    $stateFile,
+     $postData = null
+) {
     $totalKeys = count($allTokens);
     $tried = 0;
 
@@ -337,7 +388,7 @@ function apifyRequest(
             'error' => 'All Apify API keys exhausted or blocked',
             'message' => 'All ' . $totalKeys . ' configured keys returned quota/access errors.',
         ]),
-        'httpCode' => 402,
+        'httpCode' => 503,
     ];
 }
 
@@ -394,11 +445,12 @@ if ($action === 'run') {
 
         $entry = $supabaseCache->getQuery($cacheKey);
 
-        if (
-            $entry
-            && isset($entry['places'], $entry['scrapedAt'])
-            && (time() - (int) $entry['scrapedAt']) < CACHE_TTL_SECONDS
-        ) {
+        // Universal cache — once a cache_key has ANY entries, NEVER re-scrape.
+        // TTL gate removed: cache is permanent. Apify is only called when the
+        // cache has zero places for this cache_key.
+        $hasCache = ($entry && isset($entry['places']) && !empty($entry['places']));
+
+        if ($hasCache) {
             // Cache HIT — synthesize an Apify-shaped run response.
             // Stash billing metadata in runKeyMap so ?action=dataset knows who/what to charge.
             $cachedRunId = 'cached-' . substr(md5($cacheKey . microtime(true)), 0, 16);
@@ -426,7 +478,7 @@ if ($action === 'run') {
                     'statusMessage' => 'Served from cache',
                 ],
                 '_cached' => true,
-                '_cachedCount' => count($entry['places']),
+                '_cachedCount' => ($entry && isset($entry['places'])) ? count($entry['places']) : 0,
                 '_balance' => $balance,
             ]);
             exit;
@@ -538,12 +590,12 @@ if ($action === 'run') {
 
         if ($cacheKey) {
             $entry  = $supabaseCache->getQuery($cacheKey);
-            $places = $entry['places'] ?? [];
+            $places = ($entry && isset($entry['places'])) ? $entry['places'] : [];
         }
 
         // Credit-slice for the user that initiated this cached serve
         $billing = $runKeyMap[$runId] ?? $runKeyMap[$datasetId] ?? null;
-        $sliced  = applyCreditSlice($places, $billing, $cacheKey, $supabaseCache);
+        $sliced = applyCreditSlice($places, $billing, $cacheKey, $supabaseCache);
 
         // Clean up the pendingServe — dataset fetched, query is done
         $supabaseCache->deletePendingServe($datasetId);
@@ -552,9 +604,10 @@ if ($action === 'run') {
         saveState($stateFile, $currentIndex, $runKeyMap, $runKeyMapExpiry);
 
         // Honor the caller's offset/limit on the post-credit list
-        $page = array_slice($sliced, $offset, $limit);
+        $page = array_slice($sliced['places'], $offset, $limit);
+        $sliced['places'] = $page;
         http_response_code(200);
-        echo json_encode($page);
+        echo json_encode($sliced);
         exit;
     }
 
@@ -605,17 +658,19 @@ if ($action === 'run') {
         }
 
         // Credit-slice against the FULL pool (merged cache).
-        $entry  = $supabaseCache->getQuery($cacheKeyForMerge);
-        $pool   = $entry['places'] ?? $fresh;
+        $entry = $supabaseCache->getQuery($cacheKeyForMerge);
+        $pool = ($entry && isset($entry['places'])) ? $entry['places'] : $fresh;
+
         $sliced = applyCreditSlice($pool, $billing, $cacheKeyForMerge, $supabaseCache);
 
         // Clean up runKeyMap now that we've billed
         if (isset($runKeyMap[$runId])) unset($runKeyMap[$runId], $runKeyMapExpiry[$runId]);
         saveState($stateFile, $currentIndex, $runKeyMap, $runKeyMapExpiry);
 
-        $page = array_slice($sliced, $offset, $limit);
+        $page = array_slice($sliced['places'], $offset, $limit);
+        $sliced['places'] = $page;
         http_response_code(200);
-        echo json_encode($page);
+        echo json_encode($sliced);
         exit;
     }
 
