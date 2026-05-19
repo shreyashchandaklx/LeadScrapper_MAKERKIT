@@ -57,11 +57,26 @@ function build_saved_row($lead, $email, $customerId) {
     $leadScore = $lead['LeadScore'] ?? null;
     if ($leadScore === '') $leadScore = null;
 
+    $searchString = trim($lead['SearchString'] ?? '');
+    if ($searchString === '') {
+        $qPool = 'select=SearchString'
+               . '&UserEmail=eq.__cache__'
+               . '&PlaceId=eq.' . urlencode((string)$lead['PlaceId'])
+               . '&limit=1';
+        $rPool = sb_select(POOL_TABLE, $qPool);
+        if ($rPool['status'] === 200 && is_array($rPool['json']) && !empty($rPool['json'])) {
+            $searchString = trim($rPool['json'][0]['SearchString'] ?? '');
+        }
+    }
+    if ($searchString === '') {
+        $searchString = SAVED_SEARCH;
+    }
+
     return [
         'CustomerID'    => $customerId,
         'UserEmail'     => $email,
         'PlaceId'       => (string) $lead['PlaceId'],
-        'SearchString'  => SAVED_SEARCH,
+        'SearchString'  => $searchString,
         'Status'        => SAVED_STATUS,
         'Notes'         => $lead['Notes'] ?? null,
         'LeadScore'     => $leadScore,
