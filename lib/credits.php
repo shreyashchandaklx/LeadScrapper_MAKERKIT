@@ -200,23 +200,52 @@ function credits_get_or_create_customer_id($email)
 /**
  * Returns array of place_ids this user has already received for cacheKey.
  */
-function credits_get_delivered_ids($email, $cacheKey)
+function credits_get_delivered_ids($email, $target)
 {
-    if (empty($email) || empty($cacheKey)) return [];
-    $query = 'select=PlaceId'
-        . '&UserEmail=eq.' . rawurlencode(strtolower(trim($email)))
-        . '&Status=eq.delivered'
-        . '&SearchString=eq.' . rawurlencode($cacheKey)
-        . '&limit=100000';
-    $r = sb_select('user_leadscrapper_leads', $query);
-    if ($r['status'] !== 200 || !is_array($r['json'])) return [];
+    if (empty($email) || empty($target)) return [];
+    $cid = credits_get_or_create_customer_id($email);
+    if (!$cid) return [];
+
     $ids = [];
-    foreach ($r['json'] as $row) {
-        if (isset($row['PlaceId']) && $row['PlaceId'] !== '') {
-            $ids[] = (string) $row['PlaceId'];
+    if (is_array($target)) {
+        $cleanPids = [];
+        foreach ($target as $pid) {
+            if ($pid === '' || $pid === null) continue;
+            $cleanPids[] = (string) $pid;
+        }
+        if (empty($cleanPids)) return [];
+
+        foreach (array_chunk($cleanPids, 200) as $chunk) {
+            $idList = implode(',', array_map('rawurlencode', $chunk));
+            $query = 'select=PlaceId'
+                . '&CustomerID=eq.' . urlencode((string)$cid)
+                . '&Status=eq.delivered'
+                . '&PlaceId=in.(' . $idList . ')';
+            $r = sb_select('user_leadscrapper_leads', $query);
+            if ($r['status'] === 200 && is_array($r['json'])) {
+                foreach ($r['json'] as $row) {
+                    if (isset($row['PlaceId']) && $row['PlaceId'] !== '') {
+                        $ids[] = (string) $row['PlaceId'];
+                    }
+                }
+            }
+        }
+    } else {
+        $query = 'select=PlaceId'
+            . '&UserEmail=eq.' . rawurlencode(strtolower(trim($email)))
+            . '&Status=eq.delivered'
+            . '&SearchString=eq.' . rawurlencode($target)
+            . '&limit=100000';
+        $r = sb_select('user_leadscrapper_leads', $query);
+        if ($r['status'] === 200 && is_array($r['json'])) {
+            foreach ($r['json'] as $row) {
+                if (isset($row['PlaceId']) && $row['PlaceId'] !== '') {
+                    $ids[] = (string) $row['PlaceId'];
+                }
+            }
         }
     }
-    return $ids;
+    return array_values(array_unique($ids));
 }
 
 /**

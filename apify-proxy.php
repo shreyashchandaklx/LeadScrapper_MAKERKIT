@@ -202,7 +202,12 @@ function applyCreditSlice($allPlaces, $billing, $cacheKey, $cacheHelper)
     $source        = (string) ($billing['source'] ?? 'apify');
 
     // 1) Fetch user's prior deliveries + extras + current balance
-    $delivered = credits_get_delivered_ids($email, $cacheKey);
+    $poolPlaceIds = [];
+    foreach ($allPlaces as $p) {
+        $pid = $p['placeId'] ?? null;
+        if ($pid) $poolPlaceIds[] = $pid;
+    }
+    $delivered = credits_get_delivered_ids($email, $poolPlaceIds);
     $extras    = credits_get_extras($email, $cacheKey);
     $balance   = credits_get_balance($email);
     if ($balance === null) {
