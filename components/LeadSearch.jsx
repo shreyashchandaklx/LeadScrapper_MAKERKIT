@@ -461,8 +461,10 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
 
       setChargeInfo({
         delivered:       envelope.delivered ?? places.length,
+        totalDelivered:  envelope.totalDelivered ?? (envelope.delivered ?? places.length),
         charged:         Number(envelope.charged ?? 0),
         extrasRemaining: envelope.extrasRemaining ?? 0,
+        poolSize:        envelope.poolSize ?? places.length,
         source:          envelope.source ?? (cached ? 'cache' : 'apify'),
         cached,
       });
@@ -470,7 +472,8 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
       setCurrentPage(1);
       refreshBalance();
 
-      setProgress(`Found ${places.length} businesses — Charged ${(envelope.charged ?? 0).toFixed(2)} credits.`);
+      const totalFound = envelope.poolSize ?? places.length;
+      setProgress(`Found ${totalFound} total businesses (showing ${places.length}) — Charged ${(envelope.charged ?? 0).toFixed(2)} credits.`);
 
       // Start background email extraction for found places
       startEmailExtraction(places);
@@ -965,14 +968,15 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
           <div className="mt-3 flex items-center gap-2 text-xs flex-wrap">
             <CheckCircle className="w-3.5 h-3.5 text-green-500" />
             <span className="text-base-content/70">
-              Charged <b>{chargeInfo.charged.toFixed(2)}</b> credit{chargeInfo.charged === 1 ? '' : 's'} for <b>{chargeInfo.delivered}</b> lead{chargeInfo.delivered === 1 ? '' : 's'}
-              {chargeInfo.source === 'cache' && ' (from cache)'}
-              {chargeInfo.source === 'extras' && ' (from your queue)'}
-              {chargeInfo.source === 'mixed' && ' (queue + cache)'}
+              <b>{chargeInfo.totalDelivered}</b> delivered · <b>{chargeInfo.extrasRemaining}</b> queued
+              <span className="text-base-content/40 ml-1.5 font-normal">
+                (Charged {chargeInfo.charged.toFixed(2)} credit{chargeInfo.charged === 1 ? '' : 's'} for {chargeInfo.delivered} new lead{chargeInfo.delivered === 1 ? '' : 's'}
+                {chargeInfo.source === 'cache' && ' from cache'}
+                {chargeInfo.source === 'extras' && ' from queue'}
+                {chargeInfo.source === 'mixed' && ' queue + cache'}
+                )
+              </span>
             </span>
-            {chargeInfo.extrasRemaining > 0 && (
-              <span className="text-base-content/60">· <b>{chargeInfo.extrasRemaining}</b> extras queued — re-run this query to load more</span>
-            )}
           </div>
         )}
 
@@ -1075,7 +1079,11 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
               {showColPicker ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
             </button>
             {/* Display result count confirmation */}
-            <span className="text-sm text-base-content/40 font-mono">{results.length} results found (auto-saved)</span>
+            <span className="text-sm text-base-content/40 font-mono">
+              {chargeInfo?.poolSize > results.length 
+                ? `Showing ${results.length} out of ${chargeInfo.poolSize} total found` 
+                : `${results.length} results found`} (auto-saved)
+            </span>
           </div>
           {/* Column Picker Dropdown */}
           {showColPicker && (

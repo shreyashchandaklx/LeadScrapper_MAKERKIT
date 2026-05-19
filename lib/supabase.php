@@ -115,7 +115,12 @@ function sb_insert($table, $rows, $upsertOn = null) {
     }
     $path = $table;
     if ($upsertOn) $path .= '?on_conflict=' . $upsertOn;
-    return sb_request('POST', $path, $rows, $headers);
+    $r = sb_request('POST', $path, $rows, $headers);
+    if ($r['status'] >= 300) {
+        error_log('[sb_insert ERROR] ' . print_r($r, true));
+        file_put_contents(__DIR__ . '/../debug_insert.txt', json_encode($r) . "\n", FILE_APPEND);
+    }
+    return $r;
 }
 
 function sb_update($table, $query, $patch) {

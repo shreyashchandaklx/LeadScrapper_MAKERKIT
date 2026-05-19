@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerAdminClient } from '@kit/supabase/server-admin-client';
-import { cleanEmail } from '../../_lib';
+import { cleanEmail, isDevEmail } from '../../_lib';
 
 const CREDIT_PER_LEAD = 0.01;
 
@@ -24,6 +24,20 @@ export async function POST(req: NextRequest) {
 
   const charge = Number((leadCount * CREDIT_PER_LEAD).toFixed(2));
   console.log(`[Deduct] email="${email}" leadCount=${leadCount} charge=${charge}`);
+
+  // Dev/owner emails get unlimited credits — same bypass as /credits/get.
+  // Without this, dev users see 9999 in the UI but the deduct fails with 402
+  // because their row in user_credits has balance=0 (or doesn't exist).
+  if (isDevEmail(email)) {
+    console.log(`[Deduct] Dev email "${email}" — bypassing deduction (charge=${charge}).`);
+    return NextResponse.json({
+      success: true,
+      charged: 0,
+      leadCount,
+      remaining: 9999,
+      isDev: true,
+    });
+  }
 
   const supabase = getSupabaseServerAdminClient();
 

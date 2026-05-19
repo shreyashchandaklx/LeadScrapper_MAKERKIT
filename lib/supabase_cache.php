@@ -2,15 +2,14 @@
 /**
  * supabase_cache.php - Supabase-backed universal cache for the lead scraper.
  *
- * Uses the EXISTING `leadscrapper_leads_data` table with reserved system emails:
- *   - UserEmail = '__cache__'   → cached search-result rows
- *   - UserEmail = '__pending__' → transient pending-serve mappings
+ * After migration 003 the `leadscrapper_leads_data` table holds ONLY rows
+ * with UserEmail='__cache__' — the pure scraped pool. Cache rows are keyed by
+ * `SearchString` (e.g. "lawyer|zip:411005|in").
  *
- * Cache rows reuse the same columns (Title, Address, Phone, PlaceId, etc.)
- * so no new table or schema changes are needed.
- *
- * Cache lookup key is stored in `SearchString` (keyword|location format).
- * TTL is checked via `CreatedAt`.
+ * Pending-serve mappings (runId → cacheKey) are NO LONGER stored in the DB.
+ * Instead the runId itself encodes the cacheKey:
+ *   runId = 'cached-' + base64url(cacheKey)
+ * This is stateless — no rows to create or clean up.
  */
 
 require_once __DIR__ . '/supabase.php';
@@ -18,7 +17,6 @@ require_once __DIR__ . '/supabase.php';
 class SupabaseCache {
     const TABLE         = 'leadscrapper_leads_data';
     const CACHE_EMAIL   = '__cache__';
-    const PENDING_EMAIL = '__pending__';
 
     /* ================================================================
      * QUERY CACHE — stores raw Apify place results for reuse
@@ -110,44 +108,55 @@ class SupabaseCache {
     }
 
     /* ================================================================
-     * PENDING SERVES — map cached runIds to cache keys
+     * PENDING SERVES — stateless: cacheKey is encoded directly into the runId
+     * runId format: 'cached-' + base64url(cacheKey)
      * ================================================================ */
 
+    /**
+     * Build a fake runId that encodes the cacheKey. This replaces the old
+     * setPendingServe DB write — callers should use this and pass the runId
+     * around in memory / runKeyMap instead of relying on a DB row.
+     */
+    public static function makeCachedRunId($cacheKey) {
+        $b64 = strtr(base64_encode($cacheKey), '+/', '-_');
+        $b64 = rtrim($b64, '=');
+        return 'cached-' . $b64;
+    }
+
+    /**
+     * Returns ['cacheKey' => …, 'createdAt' => time()] or null if runId
+     * doesn't encode a cacheKey we can decode.
+     */
     public function getPendingServe($runId) {
-        $q = 'UserEmail=eq.' . urlencode(self::PENDING_EMAIL)
-           . '&PlaceId=eq.' . urlencode($runId)
-           . '&limit=1';
-        $res = sb_select(self::TABLE, $q);
-
-        if ($res['status'] >= 400 || empty($res['json'])) return null;
-
-        $row = $res['json'][0];
+        if (!is_string($runId) || strpos($runId, 'cached-') !== 0) return null;
+        $b64 = substr($runId, strlen('cached-'));
+        $b64 = strtr($b64, '-_', '+/');
+        // Restore padding
+        $pad = strlen($b64) % 4;
+        if ($pad > 0) $b64 .= str_repeat('=', 4 - $pad);
+        $decoded = base64_decode($b64, true);
+        if ($decoded === false || $decoded === '') return null;
         return [
-            'cacheKey'  => $row['SearchString'] ?? '',
-            'createdAt' => strtotime($row['CreatedAt'] ?? 'now'),
+            'cacheKey'  => $decoded,
+            'createdAt' => time(),
         ];
     }
 
+    /**
+     * No-op kept for backward-compat. The runId itself now carries the
+     * cacheKey, so there's nothing to persist. Returns true so callers don't
+     * see a failure.
+     */
     public function setPendingServe($runId, $meta) {
-        $row = [
-            'UserEmail'         => self::PENDING_EMAIL,
-            'PlaceId'           => $runId,
-            'SearchString'      => $meta['cacheKey'] ?? '',
-            'Title'             => 'pending_serve',
-            'Phone'             => '',
-            'ClaimThisBusiness' => 'false',
-            'IsAdvertisement'   => 'false',
-            'CreatedAt'         => date('c'),
-        ];
-        $res = sb_insert(self::TABLE, [$row], 'UserEmail,PlaceId');
-        return $res['status'] < 400;
+        // Stateless — nothing to do. The cacheKey is encoded in $runId.
+        return true;
     }
 
+    /**
+     * No-op kept for backward-compat. Stateless mechanism has nothing to clean.
+     */
     public function deletePendingServe($runId) {
-        $q = 'UserEmail=eq.' . urlencode(self::PENDING_EMAIL)
-           . '&PlaceId=eq.' . urlencode($runId);
-        $res = sb_delete(self::TABLE, $q);
-        return $res['status'] < 400;
+        return true;
     }
 
     /* ================================================================
@@ -177,41 +186,25 @@ class SupabaseCache {
             }
         }
 
-        // Pending serves
-        $q2 = 'UserEmail=eq.' . urlencode(self::PENDING_EMAIL) . '&limit=500';
-        $res2 = sb_select(self::TABLE, $q2);
-        $pendingServes = [];
-        if ($res2['status'] < 400 && is_array($res2['json'])) {
-            foreach ($res2['json'] as $row) {
-                $pendingServes[$row['PlaceId']] = [
-                    'cacheKey'  => $row['SearchString'] ?? '',
-                    'createdAt' => strtotime($row['CreatedAt'] ?? 'now'),
-                ];
-            }
-        }
-
-        return ['queries' => $queries, 'pendingServes' => $pendingServes];
+        // Pending serves are stateless now — encoded into the runId, not in DB.
+        return ['queries' => $queries, 'pendingServes' => []];
     }
 
     public function setAll($cache) {
-        // Just delegate to setQuery for each entry
         foreach (($cache['queries'] ?? []) as $key => $entry) {
             $this->setQuery($key, $entry);
         }
-        foreach (($cache['pendingServes'] ?? []) as $runId => $meta) {
-            $this->setPendingServe($runId, $meta);
-        }
+        // pendingServes are no-ops — encoded runId carries the cacheKey now.
         return true;
     }
 
     /**
-     * Clear all cache and pending-serve rows (leaves real user leads untouched).
+     * Clear the cache pool. Pending serves are stateless so there's nothing
+     * else to clean.
      */
     public function clear() {
         $q1 = 'UserEmail=eq.' . urlencode(self::CACHE_EMAIL);
-        $q2 = 'UserEmail=eq.' . urlencode(self::PENDING_EMAIL);
         sb_delete(self::TABLE, $q1);
-        sb_delete(self::TABLE, $q2);
         return true;
     }
 

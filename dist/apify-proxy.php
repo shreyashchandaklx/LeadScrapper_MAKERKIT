@@ -216,15 +216,23 @@ function applyCreditSlice($allPlaces, $billing, $cacheKey, $cacheHelper)
     $charge          = $slice['charged'];
 
     // 3) Charge credits for the new portion (atomic via Makerkit)
+    $deductionFailed = false;
+    $deductionError  = null;
     if ($charge > 0) {
-        // deduct_leads takes lead count (1 lead = 0.01 credit). 
+        // deduct_leads takes lead count (1 lead = 0.01 credit).
         // $charge / 0.01 = number of leads
         $leadCount = (int) round($charge / 0.01);
         $r = credits_deduct_leads($email, $leadCount);
         if (empty($r['ok'])) {
-            // Deduction failed.
+            // Deduction failed — abort delivery and DO NOT mutate the extras queue.
+            // The user keeps their full slice intact for the next attempt.
+            error_log('[applyCreditSlice] credits_deduct_leads failed for ' . $email
+                . ' status=' . ($r['status'] ?? '?')
+                . ' body=' . json_encode($r));
             $placesToDeliver = [];
-            $charge = 0.0;
+            $charge          = 0.0;
+            $deductionFailed = true;
+            $deductionError  = $r['error'] ?? $r['message'] ?? 'credit_deduction_failed';
         } else {
             // 4) Record newly delivered place_ids
             $newIds = [];
@@ -236,12 +244,16 @@ function applyCreditSlice($allPlaces, $billing, $cacheKey, $cacheHelper)
         }
     }
 
-    // 5) Manage Extras queue
-    if (!empty($slice['extrasUsed'])) {
-        credits_dequeue_extras($email, $cacheKey, $slice['extrasUsed']);
-    }
-    if (!empty($slice['newOverflow'])) {
-        credits_enqueue_extras($email, $cacheKey, $slice['newOverflow']);
+    // 5) Manage Extras queue — ONLY if deduction succeeded (or nothing to charge).
+    // If we couldn't charge the user, leaving the queue untouched ensures they
+    // can re-run the search and still get the same leads (plus the same overflow).
+    if (!$deductionFailed) {
+        if (!empty($slice['extrasUsed'])) {
+            credits_dequeue_extras($email, $cacheKey, $slice['extrasUsed']);
+        }
+        if (!empty($slice['newOverflow'])) {
+            credits_enqueue_extras($email, $cacheKey, $slice['newOverflow']);
+        }
     }
 
     // 6) Audit log (always, even if 0 delivered — helps debug)
@@ -274,12 +286,21 @@ function applyCreditSlice($allPlaces, $billing, $cacheKey, $cacheHelper)
         $effectiveSrc
     );
 
+    $totalDelivered = count($delivered);
+    if (!$deductionFailed) {
+        $totalDelivered += count($placesToDeliver);
+    }
+
     return [
         'places'          => $placesToDeliver,
         'charged'         => $charge,
         'delivered'       => count($placesToDeliver),
-        'extrasRemaining' => $slice['extrasRemaining'],
-        'source'          => $effectiveSrc
+        'totalDelivered'  => $totalDelivered,
+        'extrasRemaining' => $deductionFailed ? count($extras) : $slice['extrasRemaining'],
+        'poolSize'        => $slice['poolSize'],
+        'source'          => $effectiveSrc,
+        'deductionFailed' => $deductionFailed,
+        'deductionError'  => $deductionError,
     ];
 }
 
@@ -452,12 +473,9 @@ if ($action === 'run') {
 
         if ($hasCache) {
             // Cache HIT — synthesize an Apify-shaped run response.
+            // The runId encodes the cacheKey directly (stateless — no DB row).
             // Stash billing metadata in runKeyMap so ?action=dataset knows who/what to charge.
-            $cachedRunId = 'cached-' . substr(md5($cacheKey . microtime(true)), 0, 16);
-            $supabaseCache->setPendingServe($cachedRunId, [
-                'cacheKey'  => $cacheKey,
-                'createdAt' => time(),
-            ]);
+            $cachedRunId = SupabaseCache::makeCachedRunId($cacheKey);
             $runKeyMap[$cachedRunId] = [
                 'keyIndex'      => -1,
                 'cacheKey'      => $cacheKey,

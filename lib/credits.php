@@ -138,7 +138,63 @@ function credits_deduct_leads($email, $leadCount)
 }
 
 // ---------------------------------------------------------------------------
-// (B) Local Supabase audit tables
+// (B) Customer ID resolution
+// ---------------------------------------------------------------------------
+//
+// Storage model (post migration 003):
+//   leadscrapper_leads_data    — scraped master pool (UserEmail='__cache__' only)
+//   user_leadscrapper_leads    — per-user state (delivered/queued/search/saved)
+//   user_credits               — credit wallet + CustomerID column
+//
+// CustomerID convention:
+//   1 → shreyashchandak.lx@gmail.com (dev)
+//   2 → shriganeshkolhe@gmail.com    (dev)
+//   1001+ → real users, allocated from customer_id_seq
+
+/**
+ * Returns the CustomerID for $email. Creates one (1001+) if not already
+ * registered. In-process cached so repeat calls in the same request are free.
+ *
+ * Returns int CustomerID, or null if the email is empty / lookup failed.
+ */
+function credits_get_or_create_customer_id($email)
+{
+    static $cache = [];
+
+    $email = strtolower(trim((string) $email));
+    if ($email === '') return null;
+    if (isset($cache[$email])) return $cache[$email];
+
+    // Try to find an existing row in user_credits first.
+    $r = sb_select(
+        'user_credits',
+        'select=CustomerID&Email=eq.' . rawurlencode($email) . '&limit=1'
+    );
+    if ($r['status'] === 200 && !empty($r['json'][0]['CustomerID'])) {
+        return $cache[$email] = (int) $r['json'][0]['CustomerID'];
+    }
+
+    // Not found — insert (Postgres assigns from customer_id_seq via RPC).
+    // PostgREST doesn't run our sequence directly, so we call a small RPC.
+    // Fallback: try insert; on duplicate-email race, re-select.
+    $rpc = sb_request('POST', 'rpc/assign_customer_id', [
+        'p_email' => $email,
+    ], ['Prefer: return=representation']);
+    if ($rpc['status'] >= 200 && $rpc['status'] < 300) {
+        $cid = is_array($rpc['json']) && isset($rpc['json'][0])
+            ? (int) $rpc['json'][0]
+            : (int) $rpc['json'];
+        if ($cid > 0) return $cache[$email] = $cid;
+    }
+
+    // RPC missing — log and bail (caller should treat as a soft error).
+    error_log('[credits_get_or_create_customer_id] assign_customer_id RPC failed for ' . $email
+        . ' status=' . ($rpc['status'] ?? '?') . ' raw=' . ($rpc['raw'] ?? ''));
+    return null;
+}
+
+// ---------------------------------------------------------------------------
+// (C) Per-user state on user_leadscrapper_leads
 // ---------------------------------------------------------------------------
 
 /**
@@ -146,16 +202,18 @@ function credits_deduct_leads($email, $leadCount)
  */
 function credits_get_delivered_ids($email, $cacheKey)
 {
-    $query = 'select=place_id'
-        . '&user_email=eq.' . rawurlencode($email)
-        . '&cache_key=eq.' . rawurlencode($cacheKey)
+    if (empty($email) || empty($cacheKey)) return [];
+    $query = 'select=PlaceId'
+        . '&UserEmail=eq.' . rawurlencode(strtolower(trim($email)))
+        . '&Status=eq.delivered'
+        . '&SearchString=eq.' . rawurlencode($cacheKey)
         . '&limit=100000';
-    $r = sb_select('leadscrapper_delivered', $query);
+    $r = sb_select('user_leadscrapper_leads', $query);
     if ($r['status'] !== 200 || !is_array($r['json'])) return [];
     $ids = [];
     foreach ($r['json'] as $row) {
-        if (isset($row['place_id']) && $row['place_id'] !== '') {
-            $ids[] = (string) $row['place_id'];
+        if (isset($row['PlaceId']) && $row['PlaceId'] !== '') {
+            $ids[] = (string) $row['PlaceId'];
         }
     }
     return $ids;
@@ -163,44 +221,79 @@ function credits_get_delivered_ids($email, $cacheKey)
 
 /**
  * Record place_ids as delivered to this user for cacheKey. Idempotent (upserts).
+ *
+ * If the place was previously queued, we UPDATE the row's Status to 'delivered'
+ * rather than insert a duplicate. The PK (CustomerID, PlaceId, SearchString,
+ * Status) would otherwise allow both 'queued' and 'delivered' rows for the
+ * same lead — credits_dequeue_extras takes care of removing the queued row
+ * before this is called.
  */
 function credits_record_delivered($email, $cacheKey, $placeIds)
 {
-    if (empty($placeIds)) return;
-    $rows = [];
+    if (empty($placeIds) || empty($email)) return;
+
+    $cid = credits_get_or_create_customer_id($email);
+    if ($cid === null) {
+        error_log('[credits_record_delivered] no CustomerID for ' . $email);
+        return;
+    }
+
+    $emailNorm = strtolower(trim($email));
     $now = gmdate('c');
+
+    // First, delete ALL existing rows for these PlaceIds (regardless of
+    // SearchString or Status) so we never have duplicates.  The upsert PK
+    // includes SearchString, but the same lead can arrive via different
+    // search strings — we only want ONE row per (CustomerID, PlaceId).
+    $cleanPids = [];
     foreach ($placeIds as $pid) {
         if ($pid === '' || $pid === null) continue;
+        $cleanPids[] = (string) $pid;
+    }
+    if (empty($cleanPids)) return;
+
+    foreach (array_chunk($cleanPids, 50) as $chunk) {
+        $idList = implode(',', array_map('rawurlencode', $chunk));
+        $qDel = 'CustomerID=eq.' . urlencode((string)$cid)
+              . '&PlaceId=in.(' . $idList . ')'
+              . '&Status=in.(delivered,saved,queued)';
+        sb_delete('user_leadscrapper_leads', $qDel);
+    }
+
+    // Now insert the canonical delivered rows
+    $rows = [];
+    foreach ($cleanPids as $pid) {
         $rows[] = [
-            'user_email'   => $email,
-            'cache_key'    => $cacheKey,
-            'place_id'     => (string) $pid,
-            'delivered_at' => $now,
+            'CustomerID'   => $cid,
+            'UserEmail'    => $emailNorm,
+            'PlaceId'      => $pid,
+            'SearchString' => $cacheKey,
+            'Status'       => 'delivered',
+            'CreatedAt'    => $now,
         ];
     }
-    if (empty($rows)) return;
-    // upsert on the composite PK (user_email,cache_key,place_id)
-    sb_insert('leadscrapper_delivered', $rows, 'user_email,cache_key,place_id');
+    sb_insert('user_leadscrapper_leads', $rows);
 }
 
 /**
  * Returns array of place_ids in the user's extras queue for this cacheKey.
- * Ordered FIFO.
+ * Ordered FIFO by CreatedAt.
  */
-function credits_get_extras( $email, $cacheKey)
+function credits_get_extras($email, $cacheKey)
 {
-    if (empty($email)) return [];
-    $query = 'select=place_id'
-        . '&user_email=eq.' . rawurlencode($email)
-        . '&cache_key=eq.' . rawurlencode($cacheKey)
-        . '&order=queued_at.asc'
+    if (empty($email) || empty($cacheKey)) return [];
+    $query = 'select=PlaceId'
+        . '&UserEmail=eq.' . rawurlencode(strtolower(trim($email)))
+        . '&Status=eq.queued'
+        . '&SearchString=eq.' . rawurlencode($cacheKey)
+        . '&order=CreatedAt.asc'
         . '&limit=100000';
-    $r = sb_select('leadscrapper_extras', $query);
+    $r = sb_select('user_leadscrapper_leads', $query);
     if ($r['status'] !== 200 || !is_array($r['json'])) return [];
     $ids = [];
     foreach ($r['json'] as $row) {
-        if (isset($row['place_id']) && $row['place_id'] !== '') {
-            $ids[] = (string) $row['place_id'];
+        if (isset($row['PlaceId']) && $row['PlaceId'] !== '') {
+            $ids[] = (string) $row['PlaceId'];
         }
     }
     return $ids;
@@ -208,41 +301,101 @@ function credits_get_extras( $email, $cacheKey)
 
 /**
  * Remove the given place_ids from the user's extras queue for this cacheKey.
+ * (DELETE the rows where Status='queued'. Caller will follow up with
+ * credits_record_delivered to create the 'delivered' rows.)
  */
-function credits_dequeue_extras( $email, $cacheKey, $placeIds)
+function credits_dequeue_extras($email, $cacheKey, $placeIds)
 {
-    if (empty($email) || empty($placeIds)) return;
+    if (empty($email) || empty($cacheKey) || empty($placeIds)) return;
 
-    // Supabase requires url-encoded IN clauses for multiple IDs.
-    $placeIdFilter = 'place_id.in.(' . implode(',', array_map('rawurlencode', $placeIds))
-        . ')';
+    $cid = credits_get_or_create_customer_id($email);
+    if (!$cid) return;
 
-    $emailFilter = 'user_email=eq.' . rawurlencode($email);
-    $cacheKeyFilter = 'cache_key=eq.' . rawurlencode($cacheKey);
+    $cleanPids = [];
+    foreach ($placeIds as $pid) {
+        if ($pid === '' || $pid === null) continue;
+        $cleanPids[] = (string) $pid;
+    }
 
-    $query = $emailFilter . '&' . $cacheKeyFilter . '&' . $placeIdFilter;
-    sb_delete('leadscrapper_extras', $query);
+    foreach (array_chunk($cleanPids, 50) as $chunk) {
+        $idList = implode(',', array_map('rawurlencode', $chunk));
+        $query = 'CustomerID=eq.' . urlencode((string)$cid)
+            . '&Status=eq.queued'
+            . '&SearchString=eq.' . rawurlencode($cacheKey)
+            . '&PlaceId=in.(' . $idList . ')';
+        sb_delete('user_leadscrapper_leads', $query);
+    }
 }
 
 /**
  * Add place_ids to the user's extras queue for this cacheKey.
+ * Deletes any existing queued rows for these PlaceIds first (regardless of
+ * SearchString) to prevent duplicates when the same lead appears across
+ * multiple searches. Skips PlaceIds that already have a 'delivered' row.
  */
 function credits_enqueue_extras($email, $cacheKey, $placeIds)
 {
-    if (empty($email) || empty($placeIds)) return [];
-    $rows = [];
+    if (empty($email) || empty($cacheKey) || empty($placeIds)) return [];
+
+    $cid = credits_get_or_create_customer_id($email);
+    if ($cid === null) {
+        error_log('[credits_enqueue_extras] no CustomerID for ' . $email);
+        return [];
+    }
+
+    $emailNorm = strtolower(trim($email));
+    $now = gmdate('c');
+
+    $cleanPids = [];
     foreach ($placeIds as $pid) {
         if ($pid === '' || $pid === null) continue;
+        $cleanPids[] = (string) $pid;
+    }
+    if (empty($cleanPids)) return [];
+
+    // Delete any existing 'queued' rows for these PlaceIds (any SearchString)
+    // so we don't create duplicates when the same lead appears in a different search.
+    foreach (array_chunk($cleanPids, 50) as $chunk) {
+        $idList = implode(',', array_map('rawurlencode', $chunk));
+        $qDel = 'CustomerID=eq.' . urlencode((string)$cid)
+              . '&PlaceId=in.(' . $idList . ')'
+              . '&Status=eq.queued';
+        sb_delete('user_leadscrapper_leads', $qDel);
+    }
+
+    // Now check which PlaceIds already have a 'delivered' row — skip those
+    $deliveredCheck = [];
+    foreach (array_chunk($cleanPids, 50) as $chunk) {
+        $idList = implode(',', array_map('rawurlencode', $chunk));
+        $q = 'select=PlaceId'
+           . '&CustomerID=eq.' . urlencode((string)$cid)
+           . '&PlaceId=in.(' . $idList . ')'
+           . '&Status=eq.delivered'
+           . '&limit=10000';
+        $r = sb_select('user_leadscrapper_leads', $q);
+        if ($r['status'] === 200 && is_array($r['json'])) {
+            foreach ($r['json'] as $row) {
+                $deliveredCheck[$row['PlaceId']] = true;
+            }
+        }
+    }
+
+    // Build rows — skip already-delivered PlaceIds
+    $rows = [];
+    foreach ($cleanPids as $pid) {
+        if (isset($deliveredCheck[$pid])) continue;
         $rows[] = [
-            'user_email' => $email,
-            'cache_key'  => $cacheKey,
-            'place_id'   => (string) $pid,
+            'CustomerID'   => $cid,
+            'UserEmail'    => $emailNorm,
+            'PlaceId'      => $pid,
+            'SearchString' => $cacheKey,
+            'Status'       => 'queued',
+            'CreatedAt'    => $now,
         ];
     }
     if (empty($rows)) return [];
-    // Insert on conflict - if a row already exists we just ignore it.
-    // The PK (user_email, cache_key, place_id) prevents duplicates.
-    return sb_insert('leadscrapper_extras', $rows, 'user_email,cache_key,place_id');
+
+    return sb_insert('user_leadscrapper_leads', $rows);
 }
 
 /**
@@ -250,25 +403,20 @@ function credits_enqueue_extras($email, $cacheKey, $placeIds)
  */
 function credits_get_extras_count($email, $cacheKey)
 {
-    if (empty($email)) return 0;
-    
-    $q = "user_email=eq." . rawurlencode($email) . "&cache_key=eq." . rawurlencode($cacheKey) . "&select=count";
-    $res = sb_select('leadscrapper_extras', $q);
-    
-    // PostgREST count query returns a scalar count if we use 'select=count' 
-    // or sometimes an array [{count: N}]. 
-    // My sb_select implementation returns ['json' => ...]
-    
-    if (isset($res['json'][0]['count'])) {
-        return (int) $res['json'][0]['count'];
-    }
-    
-    return 0;
+    if (empty($email) || empty($cacheKey)) return 0;
+
+    // PostgREST: HEAD with Prefer: count=exact returns Content-Range header.
+    // But sb_select can't read headers cleanly, so we just fetch ids and count.
+    $ids = credits_get_extras($email, $cacheKey);
+    return count($ids);
 }
 
 /**
- * Insert an audit row into leadscrapper_searches.
+ * Insert an audit row into user_leadscrapper_leads with Status='search'.
  *  $source ∈ {'apify','cache','extras','mixed','failed-charge'}
+ *
+ * The synthetic PlaceId is 'search_<microtime hex>' so each search creates a
+ * uniquely-keyed row (the PK is (CustomerID, PlaceId, SearchString, Status)).
  */
 function credits_log_search(
     $email,
@@ -280,15 +428,34 @@ function credits_log_search(
     $creditsCharged,
     $source
 ) {
-    sb_insert('leadscrapper_searches', [[
-        'user_email'      => $email,
-        'keyword'         => $keyword,
-        'location_label'  => $locationLabel,
-        'cache_key'       => $cacheKey,
-        'pool_size'       => $poolSize,
-        'delivered_count' => $deliveredCount,
-        'credits_charged' => $creditsCharged,
-        'source'          => $source,
+    if (empty($email) || empty($cacheKey)) return;
+
+    $cid = credits_get_or_create_customer_id($email);
+    if ($cid === null) {
+        error_log('[credits_log_search] no CustomerID for ' . $email);
+        return;
+    }
+
+    $emailNorm = strtolower(trim($email));
+    $syntheticId = 'search_' . bin2hex(random_bytes(8));
+
+    $meta = [
+        'pool_size'       => (int) $poolSize,
+        'delivered_count' => (int) $deliveredCount,
+        'credits_charged' => (float) $creditsCharged,
+        'source'          => (string) $source,
+        'keyword'         => (string) $keyword,
+        'location_label'  => (string) $locationLabel,
+    ];
+
+    sb_insert('user_leadscrapper_leads', [[
+        'CustomerID'   => $cid,
+        'UserEmail'    => $emailNorm,
+        'PlaceId'      => $syntheticId,
+        'SearchString' => $cacheKey,
+        'Status'       => 'search',
+        'SearchMeta'   => $meta,
+        'CreatedAt'    => gmdate('c'),
     ]]);
 }
 
