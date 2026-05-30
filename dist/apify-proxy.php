@@ -224,9 +224,9 @@ function applyCreditSlice($allPlaces, $billing, $cacheKey, $cacheHelper)
     $deductionFailed = false;
     $deductionError  = null;
     if ($charge > 0) {
-        // deduct_leads takes lead count (1 lead = 0.01 credit).
-        // $charge / 0.01 = number of leads
-        $leadCount = (int) round($charge / 0.01);
+        // deduct_leads takes lead count (1 lead = 1 credit).
+        // $charge / CREDIT_PER_LEAD = number of leads
+        $leadCount = (int) round($charge / CREDIT_PER_LEAD);
         $r = credits_deduct_leads($email, $leadCount);
         if (empty($r['ok'])) {
             // Deduction failed — abort delivery and DO NOT mutate the extras queue.
@@ -447,7 +447,7 @@ if ($action === 'run') {
         http_response_code(402);
         echo json_encode([
             'error'    => 'Insufficient credits',
-            'message'  => 'You need at least 0.01 credit to start a search. Top up at app.pixnom.com.',
+            'message'  => 'You need at least 1 credit to start a search. Top up at app.pixnom.com.',
             'balance'  => $balance,
             'required' => CREDIT_PER_LEAD,
         ]);

@@ -17,7 +17,7 @@
  * - Generates sites for leads (via onGenerateSites callback).
  */
 
-import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import {
   Search, MapPin, Filter, ChevronDown, ChevronUp, Star, Globe, Phone, Plus, Eye, AlertTriangle, Loader2,
   Download, Save, CheckCircle, Hash, Clock, Image, Tag, ExternalLink, ShieldCheck, ShieldX, MapPinned, Building,
@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { getScoreColor, getScoreLabel } from '../utils/helpers.js';
 import { extractEmailForUrl, getExtractEmailUrl } from '../utils/emailExtractor.js';
-import { COUNTRIES, getStates, getCities } from '../utils/indiaData.js';
+import { Country, State, City } from 'country-state-city';
 import SearchableDropdown from './SearchableDropdown.jsx';
 
 // Use the local PHP proxy for all Apify tasks
@@ -198,10 +198,13 @@ const ALL_COLUMNS = [
 
 const DEFAULT_VISIBLE = ['rank', 'title', 'site', 'score', 'categoryName', 'address', 'phone', 'email', 'website', 'totalScore', 'reviewsCount', 'claimThisBusiness', 'price', 'isAdvertisement', 'issues'];
 
-export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, savedLeadIds, leads = [], onGenerateSites, siteGen, onCancelSiteGen }) {
+export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, savedLeadIds, leads = [], onGenerateSites, siteGen, onCancelSiteGen, balance: balanceProp, onRefreshBalance }) {
   const [keyword, setKeyword] = useState('');
-  const [country, setCountry] = useState('');
+  // country holds an ISO-2 country code (e.g. 'US'); defaults to USA per product spec.
+  const [country, setCountry] = useState('US');
+  // selectedState holds the state ISO code from country-state-city (e.g. 'CA' for California).
   const [selectedState, setSelectedState] = useState('');
+  // selectedCity holds the city name (country-state-city has no stable city IDs).
   const [selectedCity, setSelectedCity] = useState('');
   const [zipCode, setZipCode] = useState('');
   const [results, setResults] = useState([]);
@@ -217,6 +220,12 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 25;
 
+  /* Refs for sentence-style Enter-to-next-field navigation */
+  const keywordRef = useRef(null);
+  const stateRef = useRef(null);
+  const cityRef = useRef(null);
+  const zipRef = useRef(null);
+
   /* Row selection state */
   const [selectedRows, setSelectedRows] = useState(new Set()); // Stores placeId/title of selected rows
 
@@ -228,7 +237,11 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
 
   /* Credit system state */
   const userEmail = (typeof window !== 'undefined' && localStorage.getItem('loggedInUser')) || '';
-  const [balance, setBalance] = useState(null);          // null = unknown, number = credits
+  // Balance now lives in app.jsx (also shown in TopNavbar). Prop drives both surfaces.
+  const balance = balanceProp;
+  const refreshBalance = useCallback(() => {
+    if (typeof onRefreshBalance === 'function') onRefreshBalance();
+  }, [onRefreshBalance]);
   const [chargeInfo, setChargeInfo] = useState(null);    // Info about credits charged for the last search
 
   /* Timer refs */
@@ -236,42 +249,37 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
   const cancelRef = useRef(false); // Ref to signal search cancellation
   const cacheModeRef = useRef(false); // Tracks if current search is using cached data
 
+  // Memoized country-state-city lookups.
+  const allCountries = useMemo(() => Country.getAllCountries(), []);
+
+  const statesList = useMemo(
+    () => (country ? State.getStatesOfCountry(country) : []),
+    [country]
+  );
+
+  const citiesList = useMemo(
+    () => (country && selectedState ? City.getCitiesOfState(country, selectedState) : []),
+    [country, selectedState]
+  );
+
+  // Resolve display names from ISO codes for the location chip + Apify payload.
+  const countryName = useMemo(
+    () => allCountries.find(c => c.isoCode === country)?.name || country,
+    [country, allCountries]
+  );
+  const stateName = useMemo(
+    () => statesList.find(s => s.isoCode === selectedState)?.name || selectedState,
+    [statesList, selectedState]
+  );
+
   // Derive location string from cascading selections for display/search
   const location = useMemo(() => {
     const parts = [];
     if (selectedCity) parts.push(selectedCity);
-    if (selectedState) parts.push(selectedState);
-    if (country) parts.push(country);
+    if (stateName) parts.push(stateName);
+    if (countryName) parts.push(countryName);
     return parts.join(', ');
-  }, [country, selectedState, selectedCity]);
-
-  // Memoize states and cities lists based on selected country for performance
-  const statesList = useMemo(() => {
-    const countryObj = COUNTRIES.find(c => c.name.toLowerCase() === country.toLowerCase().trim() || c.code.toLowerCase() === country.toLowerCase().trim());
-    return countryObj ? getStates(countryObj.code) : [];
-  }, [country]);
-
-  const citiesList = useMemo(() => {
-    const countryObj = COUNTRIES.find(c => c.name.toLowerCase() === country.toLowerCase().trim() || c.code.toLowerCase() === country.toLowerCase().trim());
-    return countryObj && selectedState ? getCities(countryObj.code, selectedState) : [];
-  }, [country, selectedState]);
-
-  /* Function to refresh the user's credit balance */
-  const refreshBalance = useCallback(async () => {
-    if (!userEmail) return; // Don't fetch if no user is logged in
-    try {
-      const response = await fetch(`${APIFY_PROXY_URL}?action=balance&email=${encodeURIComponent(userEmail)}`);
-      if (!response.ok) return;
-      const data = await response.json();
-      if (typeof data.balance === 'number') setBalance(data.balance);
-    } catch (error) {
-      console.error("Failed to refresh balance:", error);
-      // Ignore errors, balance will remain null or previous value
-    }
-  }, [userEmail]);
-
-  // Fetch balance on initial mount and when userEmail changes
-  useEffect(() => { refreshBalance(); }, [refreshBalance]);
+  }, [countryName, stateName, selectedCity]);
 
   /* Start email extraction process */
   const startEmailExtraction = useCallback(async (places) => {
@@ -320,7 +328,7 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
 
   /* Handle the main search operation */
   const handleSearch = async () => {
-    if (!keyword.trim() || !country.trim() || !selectedState.trim() || !zipCode.trim()) {
+    if (!keyword.trim() || !country || !selectedState || !zipCode.trim()) {
       alert('Please fill in all required fields: Keyword, Country, State, and ZIP code.');
       return;
     }
@@ -361,9 +369,9 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
       // Use discrete geo fields (postalCode, countryCode) for precise area search
       if (zipCode.trim()) {
         requestBody.postalCode = zipCode.trim();
-        const countryObj = COUNTRIES.find(c => c.name.toLowerCase() === country.toLowerCase().trim() || c.code.toLowerCase() === country.toLowerCase().trim());
-        if (countryObj) {
-          requestBody.countryCode = countryObj.code.toLowerCase();
+        if (country) {
+          // country is already an ISO-2 code (e.g. 'US') from country-state-city.
+          requestBody.countryCode = country.toLowerCase();
         }
         // Set a high limit to fetch all available results for the specified ZIP code
         requestBody.maxCrawledPlacesPerSearch = 9999;
@@ -855,112 +863,121 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
         </div>
       </div>
 
-      {/* Search Controls Section */}
+      {/* Search Controls Section — sentence-style composer */}
       <div className="bg-base-100 rounded p-5 border border-base-300">
-        {/* Row 1: Keyword, Country, State */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Keyword Input */}
-          <div>
-            <label className="block text-sm text-base-content/60 mb-1">Business Type / Keyword</label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
-              <input type="text" placeholder="e.g. Plumber, Dentist, Restaurant..." value={keyword} onChange={e => setKeyword(e.target.value)}
-                className="input input-bordered w-full pl-10 h-10 text-sm"
-                onKeyDown={e => e.key === 'Enter' && !loading && handleSearch()} />
-            </div>
-          </div>
-          {/* Country Input */}
-          <div>
-            <label className="block text-sm text-base-content/60 mb-1">Country</label>
-            <div className="relative">
-              <Flag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
-              <input type="text" placeholder="e.g. India, United States..." value={country} onChange={e => {
-                setCountry(e.target.value);
-                // Reset state selections when country changes
+        {/* Top-left: Country dropdown (defaults to USA) */}
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div className="w-full max-w-xs">
+            <label className="block text-xs text-base-content/50 mb-1 flex items-center gap-1">
+              <Flag className="w-3.5 h-3.5" /> Country
+            </label>
+            <SearchableDropdown
+              placeholder="Select country..."
+              options={allCountries.map(c => c.name)}
+              value={countryName || ''}
+              onChange={(name) => {
+                const match = allCountries.find(c => c.name === name);
+                setCountry(match ? match.isoCode : '');
                 setSelectedState('');
                 setSelectedCity('');
               }}
-                className="input input-bordered w-full pl-10 h-10 text-sm"
-                onKeyDown={e => e.key === 'Enter' && !loading && handleSearch()} />
-            </div>
-          </div>
-          {/* State Dropdown (if dynamic list available) or Input */}
-          {statesList.length > 0 ? (
-            <SearchableDropdown
-              label="State / Province"
-              icon={MapPinned}
-              placeholder="Select state..."
-              options={statesList}
-              value={selectedState}
-              onChange={(val) => {
-                setSelectedState(val);
-                setSelectedCity(''); // Reset city when state changes
-              }}
-              searchPlaceholder="Search states..."
+              searchPlaceholder="Search countries..."
             />
-          ) : (
-            <div>
-              <label className="block text-sm text-base-content/60 mb-1">State / Province</label>
-              <div className="relative">
-                <MapPinned className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
-                <input type="text" placeholder="e.g. California, Ontario..." value={selectedState} onChange={e => setSelectedState(e.target.value)}
-                  className="input input-bordered w-full pl-10 h-10 text-sm"
-                  onKeyDown={e => e.key === 'Enter' && !loading && handleSearch()} />
-              </div>
-            </div>
-          )}
+          </div>
         </div>
 
-        {/* Row 2: City, ZIP Code, Search Button & Credits Info */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-          {/* City Dropdown or Input */}
-          {statesList.length > 0 ? (
+        {/* Sentence-style query — Profession → State → City → ZIP. Enter advances to the next field. */}
+        <div className="flex flex-wrap items-center gap-2 text-base text-base-content/80 leading-loose">
+          <Search className="w-5 h-5 text-base-content/40 flex-shrink-0" />
+          <span className="font-medium">I'm looking for</span>
+
+          {/* Profession / keyword */}
+          <input
+            ref={keywordRef}
+            type="text"
+            placeholder="Profession (e.g. Plumber)"
+            value={keyword}
+            onChange={e => setKeyword(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                stateRef.current?.focus();
+                stateRef.current?.open();
+              }
+            }}
+            className="input input-bordered h-9 px-3 text-sm min-w-[180px] flex-1 max-w-[260px]"
+          />
+
+          <span className="font-medium">in</span>
+
+          {/* State / Province */}
+          <div className="min-w-[160px] flex-1 max-w-[220px]">
             <SearchableDropdown
-              label="City"
-              icon={MapPin}
-              placeholder={selectedState ? 'Select city...' : 'Select state first'}
-              options={citiesList}
+              ref={stateRef}
+              placeholder={statesList.length > 0 ? 'State / Province' : 'Pick country first'}
+              options={statesList.map(s => s.name)}
+              value={stateName}
+              onChange={(name) => {
+                const match = statesList.find(s => s.name === name);
+                setSelectedState(match ? match.isoCode : '');
+                setSelectedCity('');
+                // Advance focus to City as soon as a state is picked.
+                setTimeout(() => {
+                  cityRef.current?.focus();
+                  cityRef.current?.open();
+                }, 50);
+              }}
+              disabled={statesList.length === 0}
+              searchPlaceholder="Search states..."
+            />
+          </div>
+
+          <span className="text-base-content/60">,</span>
+
+          {/* City */}
+          <div className="min-w-[160px] flex-1 max-w-[220px]">
+            <SearchableDropdown
+              ref={cityRef}
+              placeholder={selectedState ? 'City' : 'Pick state first'}
+              options={citiesList.map(c => c.name)}
               value={selectedCity}
-              onChange={setSelectedCity}
-              disabled={!selectedState} // Disable if no state selected
+              onChange={(name) => {
+                setSelectedCity(name);
+                setTimeout(() => zipRef.current?.focus(), 50);
+              }}
+              disabled={!selectedState && citiesList.length === 0}
               searchPlaceholder="Search cities..."
             />
-          ) : (
-            <div>
-              <label className="block text-sm text-base-content/60 mb-1">City</label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
-                <input type="text" placeholder="e.g. Los Angeles, London..." value={selectedCity} onChange={e => setSelectedCity(e.target.value)}
-                  className="input input-bordered w-full pl-10 h-10 text-sm"
-                  onKeyDown={e => e.key === 'Enter' && !loading && handleSearch()} />
-              </div>
-            </div>
-          )}
-          {/* ZIP Code Input */}
-          <div>
-            <label className="block text-sm text-base-content/60 mb-1">ZIP / Postal Code</label>
-            <div className="relative">
-              <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/40" />
-              <input type="text" placeholder="e.g. 10001, 400001..." value={zipCode} onChange={e => setZipCode(e.target.value)}
-                className="input input-bordered w-full pl-10 h-10 text-sm"
-                onKeyDown={e => e.key === 'Enter' && !loading && handleSearch()} />
-            </div>
           </div>
-          {/* Search Button and Credits Display */}
-          <div className="flex items-end flex-col gap-1">
-            {/* Credits display */}
-            <div className="self-end flex items-center gap-2 text-xs text-base-content/70 mb-0.5" title="1 credit = 100 leads (0.01 credit per lead)">
-              <Zap className="w-3.5 h-3.5 text-yellow-500" />
-              {balance === null
-                ? 'Loading credits…'
-                : `Balance: ${Number(balance).toFixed(2)} credits ≈ ${Math.floor(balance * 100)} leads`}
-            </div>
-            {/* Search Button */}
-            <button onClick={handleSearch} disabled={loading || !keyword.trim() || !country.trim() || !selectedState.trim() || !zipCode.trim()}
-              className="btn btn-primary w-full h-10 min-h-0 font-medium flex items-center justify-center gap-2">
-              {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Searching...</> : <><Search className="w-4 h-4" /> Search Leads</>}
-            </button>
-          </div>
+
+          <span className="text-base-content/60">,</span>
+
+          {/* ZIP / Postal Code */}
+          <input
+            ref={zipRef}
+            type="text"
+            placeholder="ZIP / PIN"
+            value={zipCode}
+            onChange={e => setZipCode(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (!loading && keyword.trim() && country && selectedState && zipCode.trim()) {
+                  handleSearch();
+                }
+              }
+            }}
+            className="input input-bordered h-9 px-3 text-sm w-[140px]"
+          />
+
+          {/* Search button */}
+          <button
+            onClick={handleSearch}
+            disabled={loading || !keyword.trim() || !country || !selectedState || !zipCode.trim()}
+            className="btn btn-primary h-9 min-h-0 px-4 text-sm font-medium flex items-center gap-2 ml-auto"
+          >
+            {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Searching...</> : <><Search className="w-4 h-4" /> Search Leads</>}
+          </button>
         </div>
 
         {/* Charging Information Display */}
@@ -987,7 +1004,7 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
             <span className="text-xs text-base-content/40">Searching in:</span>
             {zipCode.trim() ? (
                // Display ZIP code and country if provided
-              <span className="text-xs font-medium text-base-content bg-base-200 px-2.5 py-1 rounded">ZIP: {zipCode.trim()}{country ? `, ${country}` : ''}</span>
+              <span className="text-xs font-medium text-base-content bg-base-200 px-2.5 py-1 rounded">ZIP: {zipCode.trim()}{countryName ? `, ${countryName}` : ''}</span>
             ) : (
               // Display combined location string
               <span className="text-xs font-medium text-base-content bg-base-200 px-2.5 py-1 rounded">{location}</span>

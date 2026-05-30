@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>LeadScrapper — Complete Architecture Documentation</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    font-size: 11pt; line-height: 1.6; color: #1a1a2e; background: #fff; padding: 40px 50px;
+  }
+  h1 { font-size: 28pt; color: #0f3460; border-bottom: 4px solid #8B5CF6; padding-bottom: 12px; margin-bottom: 8px; }
+  .subtitle { font-size: 12pt; color: #555; margin-bottom: 30px; font-style: italic; }
+  h2 { font-size: 18pt; color: #0f3460; margin-top: 36px; margin-bottom: 12px; border-left: 5px solid #8B5CF6; padding-left: 14px; }
+  h3 { font-size: 14pt; color: #16213e; margin-top: 24px; margin-bottom: 8px; }
+  h4 { font-size: 12pt; color: #0f3460; margin-top: 16px; margin-bottom: 6px; }
+  p { margin-bottom: 10px; }
+  ul, ol { margin: 8px 0 12px 24px; }
+  li { margin-bottom: 4px; }
+  code { background: #f0f0f5; padding: 2px 6px; border-radius: 4px; font-family: 'Consolas', monospace; font-size: 10pt; color: #8B5CF6; }
+  pre { background: #1a1a2e; color: #a8d8ea; padding: 16px 20px; border-radius: 8px; font-family: 'Consolas', monospace; font-size: 9.5pt; line-height: 1.5; margin: 12px 0 16px 0; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 20px 0; font-size: 10pt; }
+  th { background: #0f3460; color: #fff; padding: 10px 14px; text-align: left; font-weight: 600; }
+  td { padding: 8px 14px; border-bottom: 1px solid #e0e0e0; }
+  tr:nth-child(even) td { background: #f8f8fc; }
+  .callout { background: #fff3cd; border-left: 5px solid #ffc107; padding: 14px 18px; margin: 16px 0; border-radius: 4px; font-size: 10.5pt; }
+  .callout-info { background: #d1ecf1; border-left-color: #17a2b8; }
+  .callout-danger { background: #f8d7da; border-left-color: #dc3545; }
+  .callout-success { background: #d4edda; border-left-color: #28a745; }
+  .callout strong { display: block; margin-bottom: 4px; }
+  .diagram { background: #f8f8fc; border: 2px solid #e0e0e0; border-radius: 8px; padding: 20px; margin: 16px 0; text-align: center; font-family: 'Consolas', monospace; font-size: 9.5pt; line-height: 1.4; white-space: pre; overflow-x: auto; }
+  .page-break { page-break-before: always; }
+  .step-badge { display: inline-block; background: #8B5CF6; color: #fff; width: 28px; height: 28px; border-radius: 50%; text-align: center; line-height: 28px; font-weight: bold; font-size: 13pt; margin-right: 10px; vertical-align: middle; }
+  .flow-step { background: #f8f8fc; border-radius: 8px; padding: 16px 20px; margin: 12px 0; border: 1px solid #e0e0e0; }
+  .flow-step h4 { margin-top: 0; }
+  .footer { margin-top: 50px; padding-top: 16px; border-top: 2px solid #e0e0e0; font-size: 9pt; color: #888; text-align: center; }
+  .toc { margin: 20px 0 30px 0; }
+  .toc ol { counter-reset: toc; list-style: none; margin-left: 0; }
+  .toc > ol > li { counter-increment: toc; margin-bottom: 6px; }
+  .toc > ol > li::before { content: counter(toc) "."; font-weight: bold; color: #0f3460; margin-right: 8px; }
+</style>
+</head>
+<body>
+
+<h1>LeadScrapper</h1>
+<p class="subtitle">Complete Architecture Documentation — Google Maps Lead Generation & Management Platform</p>
+<p style="margin-bottom:6px;"><strong>Project:</strong> leadscrapper.pixnom.com</p>
+<p style="margin-bottom:6px;"><strong>Date:</strong> May 2026</p>
+<p style="margin-bottom:20px;"><strong>Stack:</strong> React (Vite) + PHP Backend + Supabase + Apify + Makerkit (Next.js)</p>
+
+<h2>Table of Contents</h2>
+<div class="toc">
+<ol>
+  <li>System Overview & High-Level Architecture</li>
+  <li>The Complete Lead Search Flow (10 Steps)</li>
+  <li>Frontend Architecture (React + Vite)</li>
+  <li>PHP Backend Layer</li>
+  <li>Apify Integration & Key Rotation</li>
+  <li>Credit & Billing System</li>
+  <li>Supabase Data Layer</li>
+  <li>Makerkit Integration (Next.js)</li>
+  <li>Email Extraction System</li>
+  <li>Map2Web Site Generation Integration</li>
+  <li>Authentication & Security</li>
+  <li>All PHP Proxy Files Reference</li>
+  <li>Database Schema & Migrations</li>
+  <li>Architecture Observations & Gotchas</li>
+</ol>
+</div>
+
+<!-- SECTION 1 -->
+<div class="page-break"></div>
+<h2>1. System Overview & High-Level Architecture</h2>
+
+<p>LeadScrapper is a lead generation platform that scrapes Google Maps for business listings using Apify, scores them by lead quality, manages them in a CRM-like interface, extracts emails, generates outreach emails, and can create full websites for leads via Map2Web integration.</p>
+
+<div class="diagram">
+                      ┌─────────────────────────────────────────┐
+                      │          USER (Browser)                 │
+                      │    React SPA (Vite) + DaisyUI/Tailwind  │
+                      └──────────────────┬──────────────────────┘
+                                         │
+              ┌──────────────────────────┼──────────────────────────┐
+              │                          │                          │
+              ▼                          ▼                          ▼
+    ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+    │  apify-proxy.php │     │ leads-proxy.php  │     │ map2web-proxy.php│
+    │  (Apify + Cache) │     │ (Lead CRUD)      │     │ (Site Generator) │
+    └────────┬─────────┘     └────────┬─────────┘     └────────┬─────────┘
+             │                        │                        │
+             ▼                        ▼                        ▼
+    ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+    │   Apify API      │     │   Supabase       │     │  app.pixnom.com  │
+    │   (Scraping)     │     │   (PostgreSQL)    │     │  (Makerkit/Next) │
+    └──────────────────┘     └──────────────────┘     └──────────────────┘
+
+    ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+    │ extract-email.php│     │ send-otp.php     │     │ leadscrapper-    │
+    │ (Web Scraping)   │     │ (Auth OTP)       │     │ credits-proxy.php│
+    └──────────────────┘     └──────────────────┘     └──────────────────┘
+
+    ┌──────────────────────────────────────────────────────────────────────┐
+    │                    Makerkit (app.pixnom.com)                        │
+    │   Next.js API Routes: /api/supabase/credits/get                    │
+    │                         /api/supabase/credits/deduct-leads         │
+    │                         user_credits table (authoritative balance)  │
+    └──────────────────────────────────────────────────────────────────────┘
+</div>
+
+<h3>Tech Stack Summary</h3>
+<table>
+  <tr><th>Layer</th><th>Technology</th><th>Purpose</th></tr>
+  <tr><td>Frontend</td><td>React 19 + Vite + DaisyUI + Tailwind</td><td>SPA with CRM-like UI</td></tr>
+  <tr><td>Backend</td><td>PHP (cURL-based proxies)</td><td>Server-side API proxying, caching, billing</td></tr>
+  <tr><td>Scraping</td><td>Apify (compass~crawler-google-places)</td><td>Google Maps data extraction</td></tr>
+  <tr><td>Database</td><td>Supabase (PostgreSQL)</td><td>Leads, credits, cache, audit logs</td></tr>
+  <tr><td>Billing</td><td>Makerkit (Next.js on app.pixnom.com)</td><td>Authoritative credit balance & deductions</td></tr>
+  <tr><td>Email</td><td>Resend API</td><td>OTP delivery for auth</td></tr>
+  <tr><td>Anti-Bot</td><td>Cloudflare Turnstile</td><td>CAPTCHA gate before login</td></tr>
+  <tr><td>Site Gen</td><td>Map2Web (app.pixnom.com)</td><td>Generate websites for leads</td></tr>
+  <tr><td>Hosting</td><td>Pixnom server (PHP)</td><td>leadscrapper.pixnom.com</td></tr>
+</table>
+
+<div class="callout callout-info">
+  <strong>Key Insight</strong>
+  The PHP layer is NOT a traditional MVC framework. Each PHP file is a standalone API proxy endpoint. There's no router, no framework — just raw PHP files with cURL calls. The React frontend talks directly to these PHP endpoints.
+</div>
+
+<!-- SECTION 2 -->
+<div class="page-break"></div>
+<h2>2. The Complete Lead Search Flow (10 Steps)</h2>
+
+<div class="flow-step">
+<h4><span class="step-badge">1</span> User Input</h4>
+<p>User enters a keyword (e.g., "plumber"), selects country/state/city or ZIP code, and clicks Search. The <code>LeadSearch</code> component collects: keyword, locationQuery (or postalCode + countryCode), maxCrawledPlacesPerSearch.</p>
+<p><strong>File:</strong> <code>components/LeadSearch.jsx</code></p>
+</div>
+
+<div class="flow-step">
+<h4><span class="step-badge">2</span> Credit Pre-Check</h4>
+<p>Before calling Apify, the proxy checks the user's credit balance via <code>credits_get_balance()</code>. This calls Makerkit's <code>/api/supabase/credits/get</code> endpoint. If balance &lt; 0.01 credit, returns 402 (Insufficient Credits).</p>
+<p><strong>File:</strong> <code>apify-proxy.php</code> (lines 428-455)</p>
+</div>
+
+<div class="flow-step">
+<h4><span class="step-badge">3</span> Supabase Cache Check</h4>
+<p>Builds a cache key from <code>keyword|location</code> (e.g., <code>"plumber|zip:90001|us"</code>). Queries the <code>leadscrapper_leads_data</code> table for existing rows with <code>UserEmail='__cache__'</code>. If cache has any places for this key, <strong>NEVER re-scrapes</strong> — serves from cache directly with a synthetic runId.</p>
+<p><strong>File:</strong> <code>apify-proxy.php</code> (lines 457-508), <code>lib/supabase_cache.php</code></p>
+</div>
+
+<div class="flow-step">
+<h4><span class="step-badge">4</span> Apify Scraping (on cache miss)</h4>
+<p>On cache miss, calls the Apify <code>compass~crawler-google-places</code> actor. The proxy rotates through up to 21 API keys (<code>APIFY_KEY_1</code> through <code>APIFY_KEY_21</code>), advancing to the next key per query. If a key returns 402/403/429, auto-rotates to the next.</p>
+<p><strong>File:</strong> <code>apify-proxy.php</code> (lines 511-549)</p>
+</div>
+
+<div class="flow-step">
+<h4><span class="step-badge">5</span> Poll & Dataset Fetch</h4>
+<p>Frontend polls <code>?action=check&runId=...</code> every 3 seconds until <code>SUCCEEDED</code>. Then fetches the dataset via <code>?action=dataset&datasetId=...</code>. The proxy fetches the FULL Apify dataset (up to 5000 items) to merge into the shared cache.</p>
+<p><strong>File:</strong> <code>components/LeadSearch.jsx</code> (polling logic), <code>apify-proxy.php</code> (lines 592-706)</p>
+</div>
+
+<div class="flow-step">
+<h4><span class="step-badge">6</span> Cache Merge</h4>
+<p>After fetching live Apify data, <code>$supabaseCache->mergePlaces()</code> deduplicates by placeId and upserts new places into <code>leadscrapper_leads_data</code> with <code>UserEmail='__cache__'</code>. Future identical queries are served from this cache for free.</p>
+<p><strong>File:</strong> <code>lib/supabase_cache.php</code> (lines 82-108)</p>
+</div>
+
+<div class="flow-step">
+<h4><span class="step-badge">7</span> Credit Slicing</h4>
+<p><code>applyCreditSlice()</code> computes what the user receives:</p>
+<ul>
+  <li>Fetches user's already-delivered placeIds (free, already paid)</li>
+  <li>Checks extras queue (overflow from previous searches)</li>
+  <li>Delivers extras FIRST, then new pool leads, capped at 100 per search</li>
+  <li>Charges <code>leadCount * 0.01</code> credits via Makerkit's <code>/api/supabase/credits/deduct-leads</code></li>
+  <li>Records delivered IDs, enqueues overflow, logs the search</li>
+</ul>
+<p><strong>File:</strong> <code>lib/credits.php</code> (lines 514-592), <code>apify-proxy.php</code> (lines 186-310)</p>
+</div>
+
+<div class="flow-step">
+<h4><span class="step-badge">8</span> Lead Scoring</h4>
+<p>Frontend scores each lead 0-10 based on: unclaimed GBP (+25), no website (+20), no SSL (+10), no reviews (+20), low rating (+10), no social (+5). Leads are tagged as "Hot Lead" (7.5+), "Warm Lead" (5+), "Cool Lead" (2.5+), or "Low Priority".</p>
+<p><strong>File:</strong> <code>components/LeadSearch.jsx</code> (lines 40-77), <code>utils/helpers.js</code></p>
+</div>
+
+<div class="flow-step">
+<h4><span class="step-badge">9</span> Email Extraction (Background)</h4>
+<p>For leads with websites, the frontend calls <code>extract-email.php?url=...</code> which scrapes the business homepage (then /contact, /about pages) for email addresses. Results are cached in localStorage for 24 hours.</p>
+<p><strong>File:</strong> <code>extract-email.php</code>, <code>utils/emailExtractor.js</code></p>
+</div>
+
+<div class="flow-step">
+<h4><span class="step-badge">10</span> Save to Supabase</h4>
+<p>User clicks Save (or auto-bulk-saves). <code>leads-proxy.php</code> upserts per-user state rows into <code>user_leadscrapper_leads</code> with Status='delivered'. Business data stays in the pool table; only user-editable metadata (Notes, LeadScore, ManagerStatus) is stored per-user.</p>
+<p><strong>File:</strong> <code>leads-proxy.php</code> (lines 180-258)</p>
+</div>
+
+<!-- SECTION 3 -->
+<div class="page-break"></div>
+<h2>3. Frontend Architecture (React + Vite)</h2>
+
+<h3>Key Frontend Files</h3>
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>index.html</code></td><td>Entry point — Turnstile CAPTCHA gate, OTP login, embed mode detection</td></tr>
+  <tr><td><code>app.jsx</code></td><td>Main App component — routing, state management, data persistence</td></tr>
+  <tr><td><code>styles.css</code></td><td>Custom styling</td></tr>
+  <tr><td><code>vite.config.js</code></td><td>Vite build config</td></tr>
+</table>
+
+<h3>Component Architecture</h3>
+<table>
+  <tr><th>Component</th><th>Purpose</th></tr>
+  <tr><td><code>Sidebar.jsx</code></td><td>Navigation sidebar with page links</td></tr>
+  <tr><td><code>Dashboard.jsx</code></td><td>Overview stats (leads, emails, reports)</td></tr>
+  <tr><td><code>LeadSearch.jsx</code></td><td>Core search — keyword/location input, Apify integration, results table</td></tr>
+  <tr><td><code>LeadDetail.jsx</code></td><td>Single lead detail view with audit report</td></tr>
+  <tr><td><code>LeadManager.jsx</code></td><td>Saved leads table — status/notes management, bulk site generation</td></tr>
+  <tr><td><code>EmailGenerator.jsx</code></td><td>AI-powered email generation for leads</td></tr>
+  <tr><td><code>ReportGenerator.jsx</code></td><td>Lead audit report generation (PDF)</td></tr>
+  <tr><td><code>ReviewResponder.jsx</code></td><td>Google review response generator</td></tr>
+  <tr><td><code>PostCreator.jsx</code></td><td>Social media post creator</td></tr>
+  <tr><td><code>EmailOutreach.jsx</code></td><td>Email campaign management</td></tr>
+  <tr><td><code>Settings.jsx</code></td><td>User settings</td></tr>
+  <tr><td><code>SearchableDropdown.jsx</code></td><td>Reusable searchable dropdown for country/state/city</td></tr>
+</table>
+
+<h3>Pages / Routes (client-side)</h3>
+<table>
+  <tr><th>Page</th><th>URL param</th><th>Component</th></tr>
+  <tr><td>Search</td><td><code>?page=search</code> (default)</td><td><code>LeadSearch</code></td></tr>
+  <tr><td>Dashboard</td><td><code>?page=dashboard</code></td><td><code>Dashboard</code></td></tr>
+  <tr><td>Lead Detail</td><td><code>?page=detail</code></td><td><code>LeadDetail</code></td></tr>
+  <tr><td>Lead Manager</td><td><code>?page=leads</code></td><td><code>LeadManager</code></td></tr>
+  <tr><td>Email Generator</td><td><code>?page=email-gen</code></td><td><code>EmailGenerator</code></td></tr>
+  <tr><td>Reports</td><td><code>?page=reports</code></td><td><code>ReportGenerator</code></td></tr>
+  <tr><td>Review Responder</td><td><code>?page=review</code></td><td><code>ReviewResponder</code></td></tr>
+  <tr><td>Post Creator</td><td><code>?page=posts</code></td><td><code>PostCreator</code></td></tr>
+  <tr><td>Email Outreach</td><td><code>?page=outreach</code></td><td><code>EmailOutreach</code></td></tr>
+  <tr><td>Settings</td><td><code>?page=settings</code></td><td><code>Settings</code></td></tr>
+</table>
+
+<h3>Utils</h3>
+<table>
+  <tr><th>File</th><th>Purpose</th></tr>
+  <tr><td><code>utils/emailExtractor.js</code></td><td>Extracts emails from business websites (localStorage cached)</td></tr>
+  <tr><td><code>utils/helpers.js</code></td><td>Lead scoring colors, status badges, date formatting, audit logic</td></tr>
+  <tr><td><code>utils/indiaData.js</code></td><td>Country/state/city data for location dropdowns</td></tr>
+  <tr><td><code>utils/map2web.js</code></td><td>Map2Web site generation client (build → publish → log)</td></tr>
+  <tr><td><code>utils/mockData.js</code></td><td>Mock data for development</td></tr>
+  <tr><td><code>utils/pdfGenerator.js</code></td><td>PDF report generation (uses jspdf)</td></tr>
+  <tr><td><code>utils/gmbAudit.js</code></td><td>Google My Business audit logic</td></tr>
+</table>
+
+<h3>Build Process</h3>
+<pre>
+npm run build
+  → vite build (bundles React app to dist/)
+  → npm run copy-php (copies .env + all PHP files to dist/)
+</pre>
+<p>The <code>copy-php</code> script copies: <code>.env</code>, <code>send-otp.php</code>, <code>apify-proxy.php</code>, <code>extract-email.php</code>, <code>sheets-proxy.php</code>, <code>shorten-url.php</code>, <code>leads-proxy.php</code>, <code>map2web-proxy.php</code>, <code>leadscrapper-credits-proxy.php</code>, <code>debug.php</code>, and the <code>lib/</code> PHP files.</p>
+
+<!-- SECTION 4 -->
+<div class="page-break"></div>
+<h2>4. PHP Backend Layer</h2>
+
+<p>The PHP backend is NOT a framework — it's a collection of standalone proxy files. Each file handles one responsibility:</p>
+
+<table>
+  <tr><th>File</th><th>Purpose</th><th>Methods</th></tr>
+  <tr><td><code>apify-proxy.php</code></td><td>Apify API proxy with key rotation + cache + billing</td><td>run, check, dataset, balance, status, cache</td></tr>
+  <tr><td><code>leads-proxy.php</code></td><td>Lead CRUD (save, load, update, delete, bulk save)</td><td>load, saveLead, bulkSaveLeads, updateLead, deleteLead</td></tr>
+  <tr><td><code>leadscrapper-credits-proxy.php</code></td><td>Credit proxy to Makerkit</td><td>balance, deduct-leads</td></tr>
+  <tr><td><code>map2web-proxy.php</code></td><td>Reverse proxy to Map2Web (app.pixnom.com)</td><td>scrape, deduct, build, publish, log</td></tr>
+  <tr><td><code>extract-email.php</code></td><td>Website email extraction</td><td>GET ?url=...</td></tr>
+  <tr><td><code>send-otp.php</code></td><td>Sends OTP via Resend API</td><td>POST {email, otp}</td></tr>
+  <tr><td><code>sheets-proxy.php</code></td><td>Google Apps Script proxy</td><td>—</td></tr>
+  <tr><td><code>shorten-url.php</code></td><td>URL shortening</td><td>—</td></tr>
+  <tr><td><code>debug.php</code></td><td>Debug endpoint</td><td>—</td></tr>
+</table>
+
+<h3>Shared Libraries (lib/)</h3>
+<table>
+  <tr><th>File</th><th>Purpose</th></tr>
+  <tr><td><code>lib/supabase.php</code></td><td>Low-level Supabase REST helper (sb_select, sb_insert, sb_update, sb_delete)</td></tr>
+  <tr><td><code>lib/supabase_cache.php</code></td><td>SupabaseCache class — query cache, merge, pending serves</td></tr>
+  <tr><td><code>lib/credits.php</code></td><td>Credit system — balance, deduct, delivered tracking, extras queue, search audit</td></tr>
+</table>
+
+<h3>Supabase REST Helper Pattern</h3>
+<pre>
+sb_select(table, query)    → GET  /rest/v1/{table}?{query}
+sb_insert(table, rows)     → POST /rest/v1/{table}
+sb_update(table, query, p) → PATCH /rest/v1/{table}?{query}
+sb_delete(table, query)    → DELETE /rest/v1/{table}?{query}
+</pre>
+<p>All use PostgREST with the service role key for full access.</p>
+
+<!-- SECTION 5 -->
+<div class="page-break"></div>
+<h2>5. Apify Integration & Key Rotation</h2>
+
+<h3>Actor Used</h3>
+<p><code>compass~crawler-google-places</code> — a free/public Apify actor for scraping Google Maps business listings.</p>
+
+<h3>Key Rotation System</h3>
+<table>
+  <tr><th>Feature</th><th>Detail</th></tr>
+  <tr><td>Max Keys</td><td>Up to 21 keys (<code>APIFY_KEY_1</code> through <code>APIFY_KEY_21</code>)</td></tr>
+  <tr><td>Rotation Trigger</td><td>HTTP 402 (quota), 403 (disabled), 429 (rate limit)</td></tr>
+  <tr><td>Per-Query Rotation</td><td>Each new search advances to next key (round-robin)</td></tr>
+  <tr><td>Run Binding</td><td><code>runKeyMap</code> maps runId → keyIndex so check/dataset use the same key</td></tr>
+  <tr><td>State Persistence</td><td><code>.apify_key_state.json</code> file (currentIndex + runKeyMap + expiry)</td></tr>
+  <tr><td>Expiry</td><td>runKeyMap entries pruned after 24 hours</td></tr>
+</table>
+
+<h3>Request Flow</h3>
+<pre>
+Action: run
+  → Credit pre-check (Makerkit balance)
+  → Cache check (Supabase)
+  → If cache HIT: return synthetic runId immediately
+  → If cache MISS: POST to Apify actor with current key
+  → On success: map runId → keyIndex, advance to next key
+
+Action: check
+  → If cached runId: return SUCCEEDED immediately
+  → Else: GET actor-runs/{runId} with same key that started it
+
+Action: dataset
+  → If cached runId: decode cacheKey from runId, fetch from Supabase cache
+  → Apply credit slice, return sliced results
+  → If live: GET dataset items, merge into cache, apply credit slice
+</pre>
+
+<!-- SECTION 6 -->
+<div class="page-break"></div>
+<h2>6. Credit & Billing System</h2>
+
+<h3>Pricing Model</h3>
+<table>
+  <tr><th>Unit</th><th>Value</th></tr>
+  <tr><td>1 Credit</td><td>= 100 leads</td></tr>
+  <tr><td>1 Lead</td><td>= 0.01 credit</td></tr>
+  <tr><td>Max per search</td><td>100 leads</td></tr>
+  <tr><td>Dev emails</td><td>9999 credits (unlimited)</td></tr>
+</table>
+
+<h3>Credit Flow Architecture</h3>
+<div class="diagram">
+Browser (React)
+    │
+    ▼
+apify-proxy.php (?action=run)
+    │
+    ├──→ credits_get_balance(email)
+    │       │
+    │       ▼
+    │    leadscrapper-credits-proxy.php → Makerkit /api/supabase/credits/get
+    │                                        │
+    │                                        ▼
+    │                                     Supabase user_credits table
+    │
+    ├──→ SupabaseCache (leadscrapper_leads_data) — shared pool
+    │
+    ├──→ credits_compute_slice() — delivered + extras + balance → slice
+    │
+    ├──→ credits_deduct_leads(email, leadCount)
+    │       │
+    │       ▼
+    │    Makerkit /api/supabase/credits/deduct-leads
+    │       │
+    │       ▼
+    │    UPDATE user_credits SET Credits = balance - charge
+    │
+    ├──→ credits_record_delivered() — mark placeIds as delivered
+    ├──→ credits_dequeue_extras() — remove used extras
+    ├──→ credits_enqueue_extras() — queue overflow
+    └──→ credits_log_search() — audit log
+</div>
+
+<h3>Three-Tier Lead State Machine</h3>
+<pre>
+                        ┌──────────┐
+                        │  POOL    │  (leadscrapper_leads_data, UserEmail='__cache__')
+                        │ Shared   │  Business data, never user-specific
+                        └────┬─────┘
+                             │
+              ┌──────────────┼──────────────┐
+              ▼              ▼              ▼
+        ┌──────────┐  ┌──────────┐  ┌──────────┐
+        │ QUEUED   │  │DELIVERED │  │  SAVED   │
+        │ (extras) │  │ (paid)   │  │(bookmarked)│
+        └──────────┘  └──────────┘  └──────────┘
+
+        Status='queued'   Status='delivered'  Status='saved'
+        Overflow from     User received       User explicitly
+        searches they     these leads (paid    saved/bookmarked
+        didn't pay for    for or free from     for management
+                          extras queue)
+</pre>
+
+<h3>Extras Queue Logic</h3>
+<p>When a search returns more leads than the user's balance allows, the overflow is queued as <code>Status='queued'</code> in <code>user_leadscrapper_leads</code>. On the next search for the same cacheKey, these extras are delivered FIRST (free — already counted). Only truly new leads are charged.</p>
+
+<!-- SECTION 7 -->
+<div class="page-break"></div>
+<h2>7. Supabase Data Layer</h2>
+
+<h3>Tables (Post-Migration 003)</h3>
+<table>
+  <tr><th>Table</th><th>Purpose</th><th>Key Columns</th></tr>
+  <tr><td><code>user_credits</code></td><td>Credit wallet (authoritative balance)</td><td>Email, Credits (numeric 10,2), CustomerID, UpdatedAt</td></tr>
+  <tr><td><code>leadscrapper_leads_data</code></td><td>Shared business data pool + cache</td><td>UserEmail='__cache__', PlaceId, Title, Address, Phone, Website, SearchString, etc.</td></tr>
+  <tr><td><code>user_leadscrapper_leads</code></td><td>Per-user lead state</td><td>CustomerID, UserEmail, PlaceId, SearchString, Status, Notes, LeadScore, ManagerStatus, SearchMeta</td></tr>
+</table>
+
+<h3>Table Relationships</h3>
+<div class="diagram">
+user_credits (Makerkit manages)
+    │
+    │  CustomerID
+    │
+    ├── user_leadscrapper_leads (per-user state)
+    │       │
+    │       │  PlaceId (FK to pool)
+    │       │
+    │       └── leadscrapper_leads_data (shared pool, UserEmail='__cache__')
+    │
+    └── (credit balance read/deducted via Makerkit Next.js API)
+</div>
+
+<h3>CustomerID Convention</h3>
+<table>
+  <tr><th>ID</th><th>Email</th><th>Type</th></tr>
+  <tr><td>1</td><td>shreyashchandak.lx@gmail.com</td><td>Dev</td></tr>
+  <tr><td>2</td><td>shriganeshkolhe@gmail.com</td><td>Dev</td></tr>
+  <tr><td>1001+</td><td>Real users</td><td>Allocated from customer_id_seq</td></tr>
+</table>
+
+<h3>Cache Key Format</h3>
+<pre>
+cacheKey = lowercase(keyword) + '|' + lowercase(location)
+
+Examples:
+  "plumber|zip:90001|us"
+  "dentist|new york, ny"
+  "restaurant|mumbai, india"
+</pre>
+
+<!-- SECTION 8 -->
+<div class="page-break"></div>
+<h2>8. Makerkit Integration (Next.js)</h2>
+
+<p>LeadScrapper integrates with the Makerkit SaaS boilerplate (Next.js) at <code>app.pixnom.com</code> for two purposes: credit management and embed mode.</p>
+
+<h3>Credit API Routes (Deployed to Makerkit)</h3>
+<table>
+  <tr><th>Route</th><th>Method</th><th>Purpose</th><th>Source File</th></tr>
+  <tr><td><code>/api/supabase/credits/get</code></td><td>GET</td><td>Returns user's credit balance</td><td><code>makerkit-api-credits/get/route.ts</code></td></tr>
+  <tr><td><code>/api/supabase/credits/deduct-leads</code></td><td>POST</td><td>Deducts credits for leads</td><td><code>makerkit-api-credits/deduct-leads/route.ts</code></td></tr>
+</table>
+
+<h3>Makerkit Page Route</h3>
+<p><code>makerkit-leadscrapper/page.tsx</code> → Redirects to <code>/home/leadscrapper/find-leads</code></p>
+<p>This allows LeadScrapper to be embedded as a page within the Makerkit Next.js app.</p>
+
+<h3>Embed Mode</h3>
+<p>When loaded inside an iframe in Makerkit (<code>?embed=true</code>):</p>
+<ul>
+  <li>Turnstile CAPTCHA is skipped</li>
+  <li>Login page is skipped</li>
+  <li>User email is passed via URL param (<code>?email=user@example.com</code>)</li>
+  <li>Sidebar is hidden</li>
+  <li>First-time users see a minimal email prompt</li>
+</ul>
+
+<h3>Proxy Architecture</h3>
+<pre>
+Browser (on leadscrapper.pixnom.com)
+    │
+    ▼
+leadscrapper-credits-proxy.php (PHP, same-origin)
+    │  forwards to Makerkit with service token
+    ▼
+app.pixnom.com/api/supabase/credits/{get|deduct-leads}
+    │
+    ▼
+Supabase user_credits table (direct PostgREST access)
+</pre>
+
+<!-- SECTION 9 -->
+<div class="page-break"></div>
+<h2>9. Email Extraction System</h2>
+
+<h3>Flow</h3>
+<ol>
+  <li>Frontend calls <code>extract-email.php?url=https://business-website.com</code></li>
+  <li>PHP fetches the homepage HTML via cURL</li>
+  <li>Extracts emails from <code>mailto:</code> links and general regex matching</li>
+  <li>Filters blacklisted domains (wixpress.com, sentry.io, etc.) and non-person emails (noreply, postmaster)</li>
+  <li>If no emails found on homepage, tries <code>/contact</code>, <code>/contact-us</code>, <code>/about</code>, <code>/about-us</code></li>
+  <li>Returns <code>{ success, emails: [], source }</code></li>
+</ol>
+
+<h3>Client-Side Caching</h3>
+<p><code>utils/emailExtractor.js</code> caches results in localStorage with a 24-hour TTL. Keyed by domain. Even empty results are cached to avoid re-scraping.</p>
+
+<h3>Blacklisted Domains</h3>
+<p>wixpress.com, sentry.io, w3.org, schema.org, googleapis.com, google.com, facebook.com, twitter.com, example.com, wordpress.org, jquery.com, cloudflare.com, gstatic.com, gravatar.com, wp.com, squarespace.com, wix.com, weebly.com, godaddy.com</p>
+
+<!-- SECTION 10 -->
+<div class="page-break"></div>
+<h2>10. Map2Web Site Generation Integration</h2>
+
+<p>LeadScrapper can generate Basic/Gold/Premium websites for any lead via Map2Web.</p>
+
+<h3>Flow</h3>
+<ol>
+  <li>User clicks "Generate Sites" on one or more leads in LeadManager</li>
+  <li><code>app.jsx</code> calls <code>generateSiteForLead(lead)</code></li>
+  <li><code>utils/map2web.js</code> converts the lead to a Map2Web business object via <code>leadToBusiness()</code></li>
+  <li>For each tier (1=Basic, 2=Gold, 3=Premium):
+    <ul>
+      <li>POST <code>/map2web-proxy.php?path=build</code> → returns { filePath, html, repoName }</li>
+      <li>POST <code>/map2web-proxy.php?path=publish</code> → pushes to GitHub Pages</li>
+    </ul>
+  </li>
+  <li>POST <code>/map2web-proxy.php?path=log</code> → records in Map2Web history</li>
+  <li>Tier URLs are persisted back to Supabase (<code>Tier1</code>, <code>Tier2</code>, <code>Tier3</code> columns)</li>
+</ol>
+
+<h3>Data Mapping: LeadScrapper → Map2Web</h3>
+<pre>
+LeadScrapper Lead              Map2Web Business
+─────────────────              ────────────────
+business_name         →        title
+address               →        address
+phone                 →        phone
+website               →        website
+category              →        categoryName
+rating                →        totalScore
+review_count          →        reviewsCount
+_raw.Title            →        title (preferred)
+_raw.Description      →        description
+_raw.OpeningHours     →        openingHours
+</pre>
+
+<div class="callout callout-info">
+  <strong>Proxy Auth</strong>
+  <code>map2web-proxy.php</code> sends <code>X-Map2Web-Token</code> header with <code>MAP2WEB_SERVICE_TOKEN</code> from .env. This authenticates as a trusted server-to-server caller on app.pixnom.com.
+</div>
+
+<!-- SECTION 11 -->
+<div class="page-break"></div>
+<h2>11. Authentication & Security</h2>
+
+<h3>Three-Stage Gate</h3>
+<ol>
+  <li><strong>Cloudflare Turnstile</strong> — CAPTCHA gate shown first (skipped on localhost and embed mode)</li>
+  <li><strong>OTP Login</strong> — email-based 6-digit OTP sent via Resend API, verified client-side</li>
+  <li><strong>Inactivity Timer</strong> — auto-logout after 10 minutes of no mouse/keyboard activity</li>
+</ol>
+
+<h3>Embed Mode (Makerkit Integration)</h3>
+<p>When <code>?embed=true</code>, the app skips Turnstile + OTP. The email is passed via URL param from the parent Makerkit page. This assumes Makerkit has already authenticated the user.</p>
+
+<h3>Security Considerations</h3>
+<div class="callout callout-danger">
+  <strong>1. Client-Side OTP Verification</strong>
+  OTP is generated and verified in the browser. The OTP value is visible in JavaScript. Same trade-off as Map2Web.
+</div>
+<div class="callout callout-danger">
+  <strong>2. Email in URL Param</strong>
+  In embed mode, the user email is passed as <code>?email=...</code> in the URL. This is visible in browser history, server logs, and referrer headers.
+</div>
+<div class="callout callout-success">
+  <strong>3. API Keys Hidden</strong>
+  All Apify API keys stay server-side in <code>.env</code>. The PHP proxy prevents key exposure to the browser.
+</div>
+
+<!-- SECTION 12 -->
+<div class="page-break"></div>
+<h2>12. All PHP Proxy Files Reference</h2>
+
+<table>
+  <tr><th>File</th><th>Endpoint</th><th>Methods</th><th>Description</th></tr>
+  <tr><td><code>apify-proxy.php</code></td><td>/apify-proxy.php</td><td>GET/POST</td><td>Apify proxy with key rotation, cache, billing</td></tr>
+  <tr><td><code>leads-proxy.php</code></td><td>/leads-proxy.php</td><td>GET/POST</td><td>Lead CRUD operations</td></tr>
+  <tr><td><code>leadscrapper-credits-proxy.php</code></td><td>/leadscrapper-credits-proxy.php</td><td>GET/POST</td><td>Credit balance/deduct proxy to Makerkit</td></tr>
+  <tr><td><code>map2web-proxy.php</code></td><td>/map2web-proxy.php</td><td>POST</td><td>Reverse proxy to Map2Web API</td></tr>
+  <tr><td><code>extract-email.php</code></td><td>/extract-email.php</td><td>GET</td><td>Website email scraper</td></tr>
+  <tr><td><code>send-otp.php</code></td><td>/send-otp.php</td><td>POST</td><td>OTP email sender via Resend</td></tr>
+  <tr><td><code>sheets-proxy.php</code></td><td>/sheets-proxy.php</td><td>GET/POST</td><td>Google Apps Script proxy</td></tr>
+  <tr><td><code>shorten-url.php</code></td><td>/shorten-url.php</td><td>POST</td><td>URL shortening service</td></tr>
+  <tr><td><code>debug.php</code></td><td>/debug.php</td><td>GET</td><td>Debug/diagnostic endpoint</td></tr>
+  <tr><td><code>debug-cache.php</code></td><td>/debug-cache.php</td><td>GET</td><td>Cache inspection endpoint</td></tr>
+  <tr><td><code>clean.php</code></td><td>/clean.php</td><td>GET</td><td>Cleanup utility</td></tr>
+  <tr><td><code>turnstile-key.php</code></td><td>/turnstile-key.php</td><td>GET</td><td>Turnstile key management</td></tr>
+</table>
+
+<!-- SECTION 13 -->
+<div class="page-break"></div>
+<h2>13. Database Schema & Migrations</h2>
+
+<h3>SQL Migrations</h3>
+<table>
+  <tr><th>File</th><th>Purpose</th></tr>
+  <tr><td><code>sql/01_credits_migration.sql</code></td><td>Fractional credits + delivered ledger + search audit log</td></tr>
+  <tr><td><code>sql/02_extras_queue_migration.sql</code></td><td>Extras queue for overflow leads</td></tr>
+  <tr><td><code>sql/03_deduplicate_leads.sql</code></td><td>Deduplication cleanup</td></tr>
+  <tr><td><code>migrations/001_two_table_redesign.sql</code></td><td>Two-table architecture (pool + state)</td></tr>
+  <tr><td><code>migrations/001b_add_assign_customer_rpc.sql</code></td><td>RPC function for CustomerID assignment</td></tr>
+  <tr><td><code>migrations/002_drop_old_tables.sql</code></td><td>Cleanup old table structure</td></tr>
+  <tr><td><code>migrations/003_consolidate_to_two_tables.sql</code></td><td>Final consolidation to pool + state tables</td></tr>
+  <tr><td><code>migrations/20260522000000_credit_bridge.sql</code></td><td>Credit bridge migration</td></tr>
+</table>
+
+<h3>Final Schema (Post-Migration 003)</h3>
+<table>
+  <tr><th>Table</th><th>PK</th><th>Description</th></tr>
+  <tr><td><code>user_credits</code></td><td>Email</td><td>Credit wallet. Managed by Makerkit. Columns: Email, Credits (numeric 10,2), CustomerID, UpdatedAt</td></tr>
+  <tr><td><code>leadscrapper_leads_data</code></td><td>(UserEmail, PlaceId)</td><td>Shared business data pool. UserEmail='__cache__' for cache rows. ~40 columns of business data.</td></tr>
+  <tr><td><code>user_leadscrapper_leads</code></td><td>(CustomerID, PlaceId, SearchString, Status)</td><td>Per-user lead state. Status ∈ {delivered, saved, queued, search}. Carries Notes, LeadScore, ManagerStatus, SearchMeta.</td></tr>
+</table>
+
+<h3>Makerkit-Side Tables (app.pixnom.com)</h3>
+<table>
+  <tr><th>Table</th><th>Used By</th><th>Purpose</th></tr>
+  <tr><td><code>user_credits</code></td><td>Makerkit API routes</td><td>Authoritative credit balance</td></tr>
+</table>
+
+<!-- SECTION 14 -->
+<div class="page-break"></div>
+<h2>14. Architecture Observations & Gotchas</h2>
+
+<div class="callout">
+  <strong>1. PHP Files are Standalone Proxies</strong>
+  No framework, no router, no middleware. Each .php file is its own endpoint. The build script copies them to dist/ alongside the bundled React app.
+</div>
+
+<div class="callout callout-danger">
+  <strong>2. Two Supabase Instances</strong>
+  LeadScrapper's Supabase holds leads data + local credit audit tables. Makerkit's Supabase (same or different instance) holds the authoritative <code>user_credits</code> table. The PHP layer bridges between them.
+</div>
+
+<div class="callout">
+  <strong>3. Cache is Permanent</strong>
+  Once a cacheKey has ANY entries in <code>leadscrapper_leads_data</code>, Apify is NEVER called again for that query. The TTL gate was removed. This saves API costs but means stale data persists.
+</div>
+
+<div class="callout">
+  <strong>4. Three Lead States</strong>
+  The same lead can exist in three states simultaneously: as a pool row (shared data), as a delivered row (user received it), and as a queued row (overflow from previous search). The system deduplicates carefully.
+</div>
+
+<div class="callout callout-danger">
+  <strong>5. Client-Side OTP + Email in URL</strong>
+  Same security trade-offs as Map2Web. OTP verified in browser, email visible in URL params during embed mode.
+</div>
+
+<div class="callout">
+  <strong>6. Apify Key Rotation is File-Based</strong>
+  <code>.apify_key_state.json</code> persists the current key index. On multi-instance deployments, this could cause race conditions. Works fine for single-server setup.
+</div>
+
+<div class="callout">
+  <strong>7. Embed Mode Bypasses All Auth</strong>
+  When <code>?embed=true</code>, the app trusts the email URL param completely. Security depends on the parent Makerkit app properly authenticating users before embedding.
+</div>
+
+<div class="callout">
+  <strong>8. Map2Web is a Reverse Proxy</strong>
+  The LeadScrapper server proxies all Map2Web API calls through <code>map2web-proxy.php</code>. This avoids CORS issues and keeps the service token server-side. Whitelist: scrape, deduct, build, publish, log.
+</div>
+
+<div class="callout callout-success">
+  <strong>9. Supabase Cache Replaces Firebase</strong>
+  The cache was migrated from Firebase Firestore to Supabase (leadscrapper_leads_data table). The <code>SupabaseCache</code> class is a drop-in replacement with the same interface.
+</div>
+
+<div class="callout">
+  <strong>10. Makerkit is the Source of Truth for Credits</strong>
+  LeadScrapper never modifies the <code>user_credits</code> table directly. All balance reads and deductions go through Makerkit's Next.js API routes, which use the Supabase admin client.
+</div>
+
+<div class="footer">
+  LeadScrapper Architecture Documentation — Generated May 2026 — leadscrapper.pixnom.com
+</div>
+
+</body>
+</html>

@@ -7,6 +7,5 @@ dist/
 .env
 dist.zip
 nul
-firebase-service-account.json
 settings.json
 dist/.env

@@ -12,6 +12,7 @@ import { ReviewResponder } from './components/ReviewResponder.jsx';
 import { PostCreator } from './components/PostCreator.jsx';
 import { EmailOutreach } from './components/EmailOutreach.jsx';
 import { Settings } from './components/Settings.jsx';
+import TopNavbar from './components/TopNavbar.jsx';
 
 /* ─── Supabase-backed storage (via leads-proxy.php) ─── */
 function isLocalhost() {
@@ -371,8 +372,26 @@ const App = () => {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [siteGen, setSiteGen] = useState({ active: false, completed: 0, total: 0, current: '', errors: [] });
+  const [balance, setBalance] = useState(null);
   const initialLoadDone = useRef(false);
   const siteGenCancelRef = useRef(false);
+
+  // Shared credit balance: navbar + LeadSearch both read this; LeadSearch triggers refresh after a charge.
+  const refreshBalance = useCallback(async () => {
+    const email = getUserEmail();
+    if (!email) return;
+    try {
+      const base = isLocalhost() ? 'http://localhost:8000' : window.location.origin;
+      const res = await fetch(`${base}/apify-proxy.php?action=balance&email=${encodeURIComponent(email)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (typeof data.balance === 'number') setBalance(data.balance);
+    } catch (err) {
+      console.error('[refreshBalance] failed:', err);
+    }
+  }, []);
+
+  useEffect(() => { refreshBalance(); }, [refreshBalance]);
 
   // Generate sites for N leads sequentially via Map2Web. For each lead we run
   // build×3 → publish×3 → log, then persist tier URLs back to Supabase.
@@ -594,35 +613,40 @@ const App = () => {
   return (
     <div className="flex h-screen w-full bg-base-200 overflow-hidden">
       {!isEmbed && <Sidebar currentPage={page} onNavigate={p => setPage(p)} collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)} onLogout={handleLogout} />}
-      <main className="flex-1 overflow-y-auto">
-        <div className="p-4">
-          {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="text-center space-y-3">
-                <div className="loading loading-spinner loading-lg text-primary"></div>
-                <p className="text-base-content/60 text-sm">Loading your data...</p>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {!isEmbed && <TopNavbar balance={balance} userEmail={getUserEmail()} onLogout={handleLogout} />}
+        <main className="flex-1 overflow-y-auto">
+          <div className="p-4">
+            {loading ? (
+              <div className="flex items-center justify-center h-64">
+                <div className="text-center space-y-3">
+                  <div className="loading loading-spinner loading-lg text-primary"></div>
+                  <p className="text-base-content/60 text-sm">Loading your data...</p>
+                </div>
               </div>
-            </div>
-          ) : (
-            <>
-              <div style={{ display: page === 'search' ? 'block' : 'none' }}>
-                {/* onViewLead does NOT auto-save — only explicit Save/Bookmark button saves */}
-                <LeadSearch
-                  onViewLead={(lead) => { handleViewDetail(lead.id); }}
-                  onSaveLead={handleSaveLead}
-                  onBulkSaveLeads={handleBulkSaveLeads}
-                  savedLeadIds={leads.map(l => l.id)}
-                  leads={leads}
-                  onGenerateSites={handleGenerateSites}
-                  siteGen={siteGen}
-                  onCancelSiteGen={handleCancelSiteGen}
-                />
-              </div>
-              {page !== 'search' && renderPage()}
-            </>
-          )}
-        </div>
-      </main>
+            ) : (
+              <>
+                <div style={{ display: page === 'search' ? 'block' : 'none' }}>
+                  {/* onViewLead does NOT auto-save — only explicit Save/Bookmark button saves */}
+                  <LeadSearch
+                    onViewLead={(lead) => { handleViewDetail(lead.id); }}
+                    onSaveLead={handleSaveLead}
+                    onBulkSaveLeads={handleBulkSaveLeads}
+                    savedLeadIds={leads.map(l => l.id)}
+                    leads={leads}
+                    onGenerateSites={handleGenerateSites}
+                    siteGen={siteGen}
+                    onCancelSiteGen={handleCancelSiteGen}
+                    balance={balance}
+                    onRefreshBalance={refreshBalance}
+                  />
+                </div>
+                {page !== 'search' && renderPage()}
+              </>
+            )}
+          </div>
+        </main>
+      </div>
     </div>
   );
 };

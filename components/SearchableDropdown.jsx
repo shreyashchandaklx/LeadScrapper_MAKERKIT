@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { ChevronDown, Search, X, Check } from 'lucide-react';
 
-export default function SearchableDropdown({
+const SearchableDropdown = forwardRef(function SearchableDropdown({
   label,
   icon: Icon,
   placeholder = 'Select...',
@@ -10,11 +10,18 @@ export default function SearchableDropdown({
   onChange,
   disabled = false,
   searchPlaceholder = 'Type to search...'
-}) {
+}, ref) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const containerRef = useRef(null);
+  const triggerRef = useRef(null);
   const searchInputRef = useRef(null);
+
+  // Expose focus()/open() to parent so Enter-to-advance can drive this dropdown.
+  useImperativeHandle(ref, () => ({
+    focus: () => triggerRef.current?.focus(),
+    open: () => { if (!disabled && options.length > 0) setIsOpen(true); },
+  }), [disabled, options.length]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return options;
@@ -56,9 +63,18 @@ export default function SearchableDropdown({
       {label && <label className="block text-sm text-base-content/50 mb-1">{label}</label>}
 
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled || options.length === 0}
         onClick={() => { if (!disabled && options.length > 0) setIsOpen(!isOpen); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+            if (!disabled && options.length > 0) {
+              e.preventDefault();
+              setIsOpen(true);
+            }
+          }
+        }}
         className={`
           flex items-center w-full h-10 px-3 rounded border text-sm transition-all duration-200
           ${disabled || options.length === 0
@@ -141,4 +157,6 @@ export default function SearchableDropdown({
       )}
     </div>
   );
-}
+});
+
+export default SearchableDropdown;

@@ -15,13 +15,13 @@
  *         - leadscrapper_extras     (FIFO queue of leads not yet delivered)
  *       These are independent of user_credits — they never touch the balance.
  *
- * Pricing: 1 credit = 100 leads  ->  1 lead = 0.01 credit
+ * Pricing: 1 credit = 1 lead
  */
 
 require_once __DIR__ . '/supabase.php';
 
-const LEADS_PER_CREDIT  = 100;
-const CREDIT_PER_LEAD   = 0.01;
+const LEADS_PER_CREDIT  = 1;
+const CREDIT_PER_LEAD   = 1;
 
 // ---------------------------------------------------------------------------
 // Env loader (kept independent of apify-proxy.php's loader so this file is
@@ -116,7 +116,7 @@ function credits_get_balance($email)
 }
 
 /**
- * Deduct leadCount * 0.01 credits from the user. Returns the Makerkit
+ * Deduct leadCount * 1 credit from the user. Returns the Makerkit
  * response with extra ['ok'] convenience flag.
  *
  * On 402 (insufficient) ok=false and the caller MUST refund/not-deliver the

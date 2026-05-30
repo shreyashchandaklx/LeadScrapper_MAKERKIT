@@ -2,14 +2,14 @@
 //   /root/next-supabase-saas-kit-turbo-main/apps/web/app/api/supabase/credits/get/route.ts
 //
 // Returns the user's current balance from user_credits table.
-// Pricing: 1 credit = 100 leads  ->  1 lead = 0.01 credit
+// Pricing: 1 credit = 1 lead
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerAdminClient } from '@kit/supabase/server-admin-client';
 import { cleanEmail, isDevEmail } from '../../_lib';
 
-const CREDIT_PER_LEAD = 0.01;
-const LEADS_PER_CREDIT = 100;
+const CREDIT_PER_LEAD = 1;
+const LEADS_PER_CREDIT = 1;
 
 export async function GET(req: NextRequest) {
 

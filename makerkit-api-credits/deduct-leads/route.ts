@@ -1,13 +1,13 @@
 // Deploy to:
 //   /root/next-supabase-saas-kit-turbo-main/apps/web/app/api/supabase/credits/deduct-leads/route.ts
 //
-// Pricing: 1 credit = 100 leads  ->  1 lead = 0.01 credit
+// Pricing: 1 credit = 1 lead
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerAdminClient } from '@kit/supabase/server-admin-client';
 import { cleanEmail, isDevEmail } from '../../_lib';
 
-const CREDIT_PER_LEAD = 0.01;
+const CREDIT_PER_LEAD = 1;
 
 export async function POST(req: NextRequest) {
 
