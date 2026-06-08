@@ -13,6 +13,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+require_once __DIR__ . '/lib/error_logger.php';
+
 // Only allow POST requests
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
@@ -64,8 +66,11 @@ $result = curl_exec($ch);
 $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 
 if (curl_errno($ch)) {
+    $errorId = log_error('GEN', 'send-otp curl error: ' . curl_error($ch), [
+        'user' => $email, 'action' => 'send-otp',
+    ]);
     http_response_code(500);
-    echo json_encode(['error' => 'Curl internal error: ' . curl_error($ch)]);
+    echo json_encode(['error' => 'Curl internal error: ' . curl_error($ch), 'errorId' => $errorId]);
     curl_close($ch);
     exit;
 }
@@ -78,10 +83,16 @@ if ($http_code >= 200 && $http_code < 300) {
     $responseData = json_decode($result, true) ?: [];
     echo json_encode(['success' => true, 'data' => $responseData]);
 } else {
+    $errorId = log_error('GEN', 'Resend API returned ' . $http_code, [
+        'user'    => $email,
+        'action'  => 'send-otp',
+        'context' => ['response' => substr((string) $result, 0, 512)],
+    ]);
     http_response_code($http_code);
     echo json_encode([
-        'error' => 'Failed to send email via Resend API', 
-        'details' => json_decode($result, true) ?: $result
+        'error' => 'Failed to send email via Resend API',
+        'details' => json_decode($result, true) ?: $result,
+        'errorId' => $errorId
     ]);
 }
 ?>

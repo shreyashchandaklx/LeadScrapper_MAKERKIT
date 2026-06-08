@@ -18,6 +18,8 @@
 
 header('Content-Type: application/json');
 
+require_once __DIR__ . '/lib/error_logger.php';
+
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit;
@@ -58,8 +60,9 @@ $url = $upstreamBase . '/api/map2web/' . $path;
 
 $headers = ['Content-Type: application/json', 'Accept: application/json'];
 if ($serviceToken === '') {
+    $errorId = log_error('RPT', 'MAP2WEB_SERVICE_TOKEN missing in .env', ['action' => $path]);
     http_response_code(500);
-    echo json_encode(['error' => 'MAP2WEB_SERVICE_TOKEN missing in .env']);
+    echo json_encode(['error' => 'MAP2WEB_SERVICE_TOKEN missing in .env', 'errorId' => $errorId]);
     exit;
 }
 $headers[] = 'X-Map2Web-Token: ' . $serviceToken;
@@ -83,9 +86,21 @@ $err = curl_error($ch);
 curl_close($ch);
 
 if ($response === false) {
+    $errorId = log_error('RPT', 'upstream fetch failed: ' . $err, [
+        'action'  => $path,
+        'context' => ['url' => $url],
+    ]);
     http_response_code(502);
-    echo json_encode(['error' => 'upstream fetch failed', 'detail' => $err, 'url' => $url]);
+    echo json_encode(['error' => 'upstream fetch failed', 'detail' => $err, 'url' => $url, 'errorId' => $errorId]);
     exit;
+}
+
+// Upstream itself answered 5xx — log it so the failure is traceable by ID.
+if ($httpCode >= 500) {
+    log_error('RPT', 'Map2Web upstream returned ' . $httpCode, [
+        'action'  => $path,
+        'context' => ['url' => $url, 'body' => substr((string) $response, 0, 512)],
+    ]);
 }
 
 http_response_code($httpCode ?: 502);

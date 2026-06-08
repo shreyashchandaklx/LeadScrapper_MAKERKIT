@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
-import { FileText, Download, Sparkles, CheckCircle, XCircle, Star, TrendingUp, Image as ImageIcon, MapPin, Phone, Globe, Tag, Clock } from 'lucide-react';
-import { getScoreColor, getScoreBg, formatDate } from '../utils/helpers.js';
+import React, { useState, useMemo, useEffect } from 'react';
+import { FileText, Download, Sparkles, Trash2, Star, Eye, X } from 'lucide-react';
+import { formatDate } from '../utils/helpers.js';
 import { runFullAudit } from '../utils/gmbAudit.js';
 import { generateAuditPDF } from '../utils/pdfGenerator.js';
+import { logError, MODULES } from '../utils/errorLogger.js';
 
 function mapLeadToAuditData(lead) {
   let reviews = lead.reviews || [];
@@ -12,18 +13,18 @@ function mapLeadToAuditData(lead) {
       let r = Math.round(lead.rating + (Math.random() * 2 - 1));
       if (r > 5) r = 5;
       if (r < 1) r = 1;
-      
+
       let text = "";
       if (r >= 4) text = ["Great place!", "Excellent service.", "Highly recommend.", "Very professional.", "Loved it."][Math.floor(Math.random()*5)];
       else if (r === 3) text = ["It was okay.", "Average service.", "Not bad.", "Could be better."][Math.floor(Math.random()*4)];
       else text = ["Terrible experience.", "Very poor service.", "Would not return.", "Rude staff.", "Disappointing."][Math.floor(Math.random()*5)];
-      
+
       reviews.push({ author: 'Customer', rating: r, text, time: Math.floor(Math.random()*11 + 1) + " months ago" });
     }
   }
 
-  const photos = lead.photos && lead.photos.length > 0 
-    ? lead.photos 
+  const photos = lead.photos && lead.photos.length > 0
+    ? lead.photos
     : Array.from({ length: Math.floor(Math.random() * 8) + 2 }, () => "https://via.placeholder.com/150");
 
   return {
@@ -40,54 +41,139 @@ function mapLeadToAuditData(lead) {
   };
 }
 
-// Helper to render stars
-const renderStars = (rating) => {
-  const stars = [];
-  for (let i = 1; i <= 5; i++) {
-    stars.push(
-      <Star 
-        key={i} 
-        size={16} 
-        className={i <= rating ? "text-warning fill-current" : "text-base-300"} 
-      />
-    );
-  }
-  return <div className="flex">{stars}</div>;
-};
+// Slug the business name so the downloaded PDF gets a clean filename.
+function slugify(s) {
+  return String(s || 'report')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+    .slice(0, 60) || 'report';
+}
 
-export const ReportGenerator = ({ leads, reports, selectedLeadId, onGenerateReport }) => {
+// Build the audit PDF for a lead. Returns the jsPDF doc — the caller decides
+// whether to .save() it or just keep the work in memory.
+function buildPdfForLead(lead) {
+  if (!lead) return null;
+  const auditData = mapLeadToAuditData(lead);
+  const audit = runFullAudit(auditData);
+  return generateAuditPDF(auditData, audit);
+}
+
+function downloadPdfForLead(lead) {
+  const doc = buildPdfForLead(lead);
+  if (!doc) return false;
+  const filename = `audit-${slugify(lead.business_name)}-${new Date().toISOString().slice(0,10)}.pdf`;
+  doc.save(filename);
+  return true;
+}
+
+export const ReportGenerator = ({ leads, reports, selectedLeadId, onGenerateReport, onDeleteReport }) => {
   const [leadId, setLeadId] = useState(selectedLeadId || '');
-  const [preview, setPreview] = useState(false);
   const [generating, setGenerating] = useState(false);
+  // Inline PDF preview: { url, name } when open, null when closed.
+  // The url is a blob URL we revoke on close to avoid leaking memory.
+  const [preview, setPreview] = useState(null);
 
   const lead = useMemo(() => leads.find(l => l.id === leadId), [leads, leadId]);
-  const auditData = useMemo(() => lead ? mapLeadToAuditData(lead) : null, [lead]);
-  const audit = useMemo(() => auditData ? runFullAudit(auditData) : null, [auditData]);
 
+  // Revoke any leftover blob URL when the component unmounts or preview changes.
+  useEffect(() => {
+    return () => { if (preview?.url) URL.revokeObjectURL(preview.url); };
+  }, [preview]);
+
+  const openPreview = (target) => {
+    if (!target) return;
+    try {
+      const doc = buildPdfForLead(target);
+      if (!doc) throw new Error('PDF builder returned nothing');
+      const url = doc.output('bloburl').toString();
+      // Close any existing preview first (release its blob URL).
+      setPreview(prev => {
+        if (prev?.url) URL.revokeObjectURL(prev.url);
+        return { url, name: target.business_name || 'Report' };
+      });
+    } catch (err) {
+      console.error('[report] preview failed', err);
+      const errorId = logError(MODULES.RPT, err, {
+        component: 'ReportGenerator', action: 'preview',
+        context: { business: target?.business_name || '' },
+      });
+      alert('Could not open report preview: ' + (err?.message || err) + '\n\nError ID: ' + errorId);
+    }
+  };
+
+  const closePreview = () => {
+    setPreview(prev => {
+      if (prev?.url) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+  };
+
+  // Generate = build + persist to the Reports list. Does NOT auto-download
+  // (sir wants explicit Download/Delete buttons in the list instead).
+  // Generate = build + persist to the Reports list, then show the preview
+  // inline (sir wants to actually see the report after pressing Generate).
+  // No auto-download — that's what the Download button is for.
   const handleGenerate = () => {
-    if (!lead || !audit) return;
+    if (!lead) return;
     setGenerating(true);
     setTimeout(() => {
-      onGenerateReport(lead.id);
-      setGenerating(false);
-      setPreview(true);
-    }, 1500);
+      try {
+        const doc = buildPdfForLead(lead);
+        if (!doc) throw new Error('PDF builder returned nothing');
+        const url = doc.output('bloburl').toString();
+        setPreview(prev => {
+          if (prev?.url) URL.revokeObjectURL(prev.url);
+          return { url, name: lead.business_name || 'Report' };
+        });
+        onGenerateReport(lead.id);
+      } catch (err) {
+        console.error('[report] generate failed', err);
+        const errorId = logError(MODULES.RPT, err, {
+          component: 'ReportGenerator', action: 'generate',
+          context: { business: lead?.business_name || '' },
+        });
+        alert('Could not generate report: ' + (err?.message || err) + '\n\nError ID: ' + errorId);
+      } finally {
+        setGenerating(false);
+      }
+    }, 50);
   };
 
-  const handleDownloadPDF = () => {
-    if (!auditData || !audit) return;
-    generateAuditPDF(auditData, audit);
+  const handleDownloadExisting = (report) => {
+    const target = leads.find(l => l.id === report.lead_id);
+    if (!target) {
+      alert('Original lead is no longer available — cannot rebuild the PDF.');
+      return;
+    }
+    try {
+      downloadPdfForLead(target);
+    } catch (err) {
+      console.error('[report] download failed', err);
+      const errorId = logError(MODULES.RPT, err, {
+        component: 'ReportGenerator', action: 'download',
+        context: { business: target?.business_name || '' },
+      });
+      alert('Could not download report: ' + (err?.message || err) + '\n\nError ID: ' + errorId);
+    }
   };
 
-  const circleRadius = 52;
-  const circleCircumference = 2 * Math.PI * circleRadius;
-  const scoreOffset = audit ? circleCircumference - (audit.score.overall / 100) * circleCircumference : circleCircumference;
+  const handleDeleteReport = (reportId) => {
+    if (window.confirm('Delete this report?')) {
+      onDeleteReport(reportId);
+    }
+  };
+
+  const sortedReports = useMemo(
+    () => [...(reports || [])].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')),
+    [reports]
+  );
 
   return (
     <div className="p-4 space-y-4 overflow-y-auto h-full bg-base-200/50">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-base-content flex items-center gap-2">
-          <FileText size={24} className="text-primary" /> 
+          <FileText size={24} className="text-primary" />
           Google Business Audit Tool
         </h2>
       </div>
@@ -96,255 +182,115 @@ export const ReportGenerator = ({ leads, reports, selectedLeadId, onGenerateRepo
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1">
             <label className="text-xs font-semibold text-base-content/70 mb-1 block uppercase tracking-wider">Select Lead to Audit</label>
-            <select className="select select-bordered w-full" value={leadId} onChange={e => { setLeadId(e.target.value); setPreview(false); }}>
+            <select className="select select-bordered w-full" value={leadId} onChange={e => setLeadId(e.target.value)}>
               <option value="">Choose a lead...</option>
               {leads.map(l => <option key={l.id} value={l.id}>{l.business_name} ({l.city})</option>)}
             </select>
           </div>
           <div className="flex gap-2 items-end">
             <button className="btn btn-primary" onClick={handleGenerate} disabled={!lead || generating}>
-              {generating ? <span className="loading loading-spinner" /> : <><Sparkles size={18} /> Generate Full Audit</>}
+              {generating ? <span className="loading loading-spinner" /> : <><Sparkles size={18} /> Generate Report</>}
             </button>
-            {preview && <button className="btn btn-secondary" onClick={handleDownloadPDF}><Download size={18} /> Download PDF</button>}
           </div>
         </div>
       </div>
 
-      {preview && lead && audit && (
-        <div className="space-y-6 pb-12" id="full-report-preview">
-          
-          {/* Section 1: Overall Audit Score */}
-          <div className="bg-base-100 rounded-lg shadow-sm border border-base-300 p-6">
-            <h3 className="text-lg font-bold text-base-content mb-6 border-b border-base-200 pb-2">Overall Audit Score</h3>
-            <div className="flex flex-col md:flex-row items-center gap-12">
-              <div className="relative w-48 h-48 flex items-center justify-center flex-shrink-0">
-                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 120 120">
-                  <circle cx="60" cy="60" r={circleRadius} fill="none" stroke="currentColor" strokeWidth="12" className="text-base-200" />
-                  <circle 
-                    cx="60" cy="60" r={circleRadius} fill="none" stroke="currentColor" strokeWidth="12" 
-                    className={audit.score.overall >= 80 ? 'text-success' : audit.score.overall >= 50 ? 'text-warning' : 'text-error'}
-                    strokeDasharray={circleCircumference}
-                    strokeDashoffset={scoreOffset}
-                    strokeLinecap="round"
-                    style={{ transition: 'stroke-dashoffset 1s ease-out' }}
-                  />
-                </svg>
-                <div className="absolute flex flex-col items-center justify-center">
-                  <span className={`text-5xl font-bold ${audit.score.overall >= 80 ? 'text-success' : audit.score.overall >= 50 ? 'text-warning' : 'text-error'}`}>
-                    {audit.score.overall}
-                  </span>
-                  <span className="text-sm font-semibold text-base-content/50 uppercase tracking-widest mt-1">out of 100</span>
-                </div>
-              </div>
-
-              <div className="flex-1 w-full space-y-4">
-                {[
-                  { label: 'Profile', val: audit.score.components.profile },
-                  { label: 'Rating', val: audit.score.components.rating },
-                  { label: 'Reviews', val: audit.score.components.reviews },
-                  { label: 'Photos', val: audit.score.components.photos },
-                  { label: 'Sentiment', val: audit.score.components.sentiment }
-                ].map(c => (
-                  <div key={c.label}>
-                    <div className="flex justify-between items-center mb-1 text-sm font-medium">
-                      <span className="text-base-content/80">{c.label}</span>
-                      <span className="text-base-content">{c.val} / 100</span>
+      {/* Past reports — Download (rebuilds the PDF) + Delete per row. */}
+      <div className="bg-base-100 rounded-lg shadow-sm border border-base-300">
+        <div className="px-4 py-3 border-b border-base-300 flex items-center justify-between">
+          <h3 className="font-semibold text-base-content">Generated Reports</h3>
+          <span className="text-xs text-base-content/60">{sortedReports.length} total</span>
+        </div>
+        {sortedReports.length === 0 ? (
+          <div className="p-6 text-center text-base-content/60 text-sm">
+            No reports yet. Pick a lead above and click <span className="font-semibold">Generate Report</span> to create one.
+          </div>
+        ) : (
+          <ul className="divide-y divide-base-300">
+            {sortedReports.map(r => {
+              const leadStillExists = leads.some(l => l.id === r.lead_id);
+              return (
+                <li key={r.id} className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-base-content truncate flex items-center gap-2">
+                      <FileText size={14} className="text-primary shrink-0" />
+                      <span className="truncate">{r.lead_name || '(unnamed lead)'}</span>
                     </div>
-                    <div className="w-full bg-base-200 rounded-full h-2.5">
-                      <div className={`h-2.5 rounded-full ${c.val >= 70 ? 'bg-success' : c.val >= 40 ? 'bg-warning' : 'bg-error'}`} style={{ width: `${c.val}%` }}></div>
+                    <div className="text-xs text-base-content/60 flex items-center gap-3 mt-0.5">
+                      <span>{formatDate ? formatDate(r.created_at) : new Date(r.created_at).toLocaleString()}</span>
+                      {typeof r.score === 'number' && r.score > 0 && (
+                        <span className="flex items-center gap-1"><Star size={12} className="text-warning fill-current" /> {r.score}</span>
+                      )}
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Section 2: Profile Completeness */}
-            <div className="bg-base-100 rounded-lg shadow-sm border border-base-300 p-6">
-              <h3 className="text-lg font-bold text-base-content mb-4 border-b border-base-200 pb-2">Profile Completeness</h3>
-              <div className="flex items-center gap-4 mb-6">
-                <div className="flex-1 bg-base-200 rounded-full h-4">
-                  <div className={`h-4 rounded-full ${audit.profile.score >= 80 ? 'bg-success' : audit.profile.score >= 50 ? 'bg-warning' : 'bg-error'}`} style={{ width: `${audit.profile.score}%` }}></div>
-                </div>
-                <span className="text-xl font-bold">{audit.profile.score}%</span>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                {audit.profile.checklist.map((item, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    {item.present ? <CheckCircle size={16} className="text-success" /> : <XCircle size={16} className="text-error" />}
-                    <span className={item.present ? 'text-base-content/90' : 'text-error font-medium'}>{item.label}</span>
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      className="btn btn-sm btn-primary btn-outline gap-1"
+                      onClick={() => openPreview(leads.find(l => l.id === r.lead_id))}
+                      disabled={!leadStillExists}
+                      title={leadStillExists ? 'View PDF inline' : 'Original lead no longer available'}
+                    >
+                      <Eye size={14} /> View
+                    </button>
+                    <button
+                      className="btn btn-sm btn-outline gap-1"
+                      onClick={() => handleDownloadExisting(r)}
+                      disabled={!leadStillExists}
+                      title={leadStillExists ? 'Download PDF' : 'Original lead no longer available'}
+                    >
+                      <Download size={14} /> Download
+                    </button>
+                    <button
+                      className="btn btn-sm btn-error btn-outline gap-1"
+                      onClick={() => handleDeleteReport(r.id)}
+                    >
+                      <Trash2 size={14} /> Delete
+                    </button>
                   </div>
-                ))}
-              </div>
-            </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
 
-            {/* Section 3: Business Information */}
-            <div className="bg-base-100 rounded-lg shadow-sm border border-base-300 p-6">
-              <h3 className="text-lg font-bold text-base-content mb-4 border-b border-base-200 pb-2">Business Information</h3>
-              <div className="space-y-4">
-                <div className="flex items-start gap-3 text-sm">
-                  <FileText size={16} className="text-primary mt-0.5" />
-                  <div><p className="font-semibold text-base-content/60 text-xs uppercase">Name</p><p className="font-medium">{auditData.name}</p></div>
-                </div>
-                <div className="flex items-start gap-3 text-sm">
-                  <MapPin size={16} className="text-primary mt-0.5" />
-                  <div><p className="font-semibold text-base-content/60 text-xs uppercase">Address</p><p className="font-medium">{auditData.address}</p></div>
-                </div>
-                <div className="flex items-start gap-3 text-sm">
-                  <Phone size={16} className="text-primary mt-0.5" />
-                  <div><p className="font-semibold text-base-content/60 text-xs uppercase">Phone</p><p className="font-medium">{auditData.phone || 'N/A'}</p></div>
-                </div>
-                <div className="flex items-start gap-3 text-sm">
-                  <Globe size={16} className="text-primary mt-0.5" />
-                  <div><p className="font-semibold text-base-content/60 text-xs uppercase">Website</p><p className="font-medium text-primary">{auditData.website || 'N/A'}</p></div>
-                </div>
-                <div className="flex items-start gap-3 text-sm">
-                  <Tag size={16} className="text-primary mt-0.5" />
-                  <div><p className="font-semibold text-base-content/60 text-xs uppercase">Category</p><p className="font-medium">{auditData.category}</p></div>
-                </div>
-              </div>
+      {/* Inline PDF preview — fixed overlay with a Close button.
+          Built with native <iframe> + a blob URL so the browser's own PDF
+          viewer handles zoom/scroll. We revoke the URL on close. */}
+      {preview && (
+        <div
+          className="fixed inset-0 z-50 bg-base-300/80 backdrop-blur-sm flex flex-col"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Report preview — ${preview.name}`}
+        >
+          <div className="flex items-center justify-between gap-3 px-4 py-3 bg-base-100 border-b border-base-300 shadow">
+            <div className="flex items-center gap-2 min-w-0">
+              <FileText size={18} className="text-primary shrink-0" />
+              <span className="font-semibold truncate">Report preview — {preview.name}</span>
             </div>
-          </div>
-
-          {/* Section 4: Rating Overview */}
-          <div className="bg-base-100 rounded-lg shadow-sm border border-base-300 p-6">
-            <h3 className="text-lg font-bold text-base-content mb-4 border-b border-base-200 pb-2">Rating Overview</h3>
-            <div className="flex flex-col md:flex-row items-center gap-12">
-              <div className="text-center md:w-1/3">
-                <span className="text-6xl font-bold text-base-content">{auditData.rating.toFixed(1)}</span>
-                <div className="flex justify-center mt-2 mb-1">{renderStars(auditData.rating)}</div>
-                <p className="text-sm text-base-content/60">{auditData.reviewCount} total reviews</p>
-              </div>
-              <div className="flex-1 w-full space-y-2 border-l border-base-200 pl-8">
-                {/* Rating Distribution (Mocked if actual distribution missing) */}
-                {[5, 4, 3, 2, 1].map(star => {
-                  const count = audit.ratingDistribution?.distribution?.[star] || 
-                                (star === Math.round(auditData.rating) ? Math.floor(auditData.reviewCount * 0.6) : Math.floor(auditData.reviewCount * 0.1));
-                  const pct = auditData.reviewCount > 0 ? (count / auditData.reviewCount) * 100 : 0;
-                  return (
-                    <div key={star} className="flex items-center gap-3 text-sm">
-                      <span className="w-4 font-medium text-base-content/70">{star}</span>
-                      <Star size={12} className="text-warning fill-current" />
-                      <div className="flex-1 bg-base-200 rounded h-2.5">
-                        <div className="bg-warning h-2.5 rounded" style={{ width: `${pct}%` }}></div>
-                      </div>
-                      <span className="w-8 text-right text-base-content/70">{count}</span>
-                    </div>
-                  );
-                })}
-              </div>
+            <div className="flex items-center gap-2">
+              <a
+                className="btn btn-sm btn-outline gap-1"
+                href={preview.url}
+                download={`audit-${slugify(preview.name)}-${new Date().toISOString().slice(0,10)}.pdf`}
+              >
+                <Download size={14} /> Download
+              </a>
+              <button
+                className="btn btn-sm btn-ghost gap-1"
+                onClick={closePreview}
+                aria-label="Close preview"
+              >
+                <X size={16} /> Close
+              </button>
             </div>
           </div>
-
-          {/* Section 5: Review Analysis */}
-          <div className="bg-base-100 rounded-lg shadow-sm border border-base-300 p-6">
-            <h3 className="text-lg font-bold text-base-content mb-4 border-b border-base-200 pb-2">Review Analysis</h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-6">
-              <div>
-                <h4 className="text-sm font-bold text-base-content/70 uppercase mb-3">Sentiment</h4>
-                {audit.sentiment.total > 0 ? (
-                  <>
-                    <div className="flex h-8 rounded-lg overflow-hidden mb-3">
-                      <div className="bg-success" style={{ width: `${audit.sentiment.positive}%` }}></div>
-                      <div className="bg-warning" style={{ width: `${audit.sentiment.neutral}%` }}></div>
-                      <div className="bg-error" style={{ width: `${audit.sentiment.negative}%` }}></div>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="flex items-center gap-1 font-medium text-success"><div className="w-3 h-3 rounded-sm bg-success"></div> Positive ({audit.sentiment.positive}%)</span>
-                      <span className="flex items-center gap-1 font-medium text-warning"><div className="w-3 h-3 rounded-sm bg-warning"></div> Neutral ({audit.sentiment.neutral}%)</span>
-                      <span className="flex items-center gap-1 font-medium text-error"><div className="w-3 h-3 rounded-sm bg-error"></div> Negative ({audit.sentiment.negative}%)</span>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-sm text-base-content/50">No review text available for sentiment analysis.</p>
-                )}
-              </div>
-
-              <div>
-                <h4 className="text-sm font-bold text-base-content/70 uppercase mb-3">Review Velocity</h4>
-                <div className="flex items-center gap-4">
-                  <div className="p-4 bg-primary/10 rounded-lg text-primary">
-                    <TrendingUp size={24} />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-base-content">{audit.velocity.perMonth} <span className="text-sm font-normal text-base-content/60">reviews/month</span></p>
-                    <p className="text-sm text-base-content/60">Current Trend: <span className="font-semibold text-base-content">{audit.velocity.trend}</span></p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <h4 className="text-sm font-bold text-base-content/70 uppercase mb-3">Top Keyword Themes</h4>
-              {audit.keywords && audit.keywords.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {audit.keywords.map((kw, i) => (
-                    <span key={i} className="px-3 py-1.5 bg-base-200 text-base-content rounded-full text-sm font-medium border border-base-300">
-                      {kw.text} <span className="text-base-content/50 ml-1">({kw.count})</span>
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-base-content/50">Not enough review data to extract keywords.</p>
-              )}
-            </div>
-          </div>
-
-          {/* Section 6 & 7: Photo Audit & Sample Reviews */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-base-100 rounded-lg shadow-sm border border-base-300 p-6">
-              <h3 className="text-lg font-bold text-base-content mb-4 border-b border-base-200 pb-2">Photo Audit</h3>
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm font-medium">Found: <strong>{audit.photoAudit.count}</strong></span>
-                <span className={`px-3 py-1 rounded text-xs font-bold uppercase ${audit.photoAudit.level === 'excellent' ? 'bg-success/10 text-success' : audit.photoAudit.level === 'good' ? 'bg-warning/10 text-warning' : 'bg-error/10 text-error'}`}>
-                  Rating: {audit.photoAudit.level}
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {auditData.photos.slice(0, 6).map((photo, i) => (
-                  <div key={i} className="aspect-square bg-base-200 rounded overflow-hidden border border-base-300 flex items-center justify-center text-base-content/20">
-                     <ImageIcon size={24} />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-base-100 rounded-lg shadow-sm border border-base-300 p-6 flex flex-col h-[320px]">
-              <h3 className="text-lg font-bold text-base-content mb-4 border-b border-base-200 pb-2">Recent Reviews</h3>
-              <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-                {auditData.reviews.length > 0 ? auditData.reviews.map((r, i) => (
-                  <div key={i} className="pb-4 border-b border-base-100 last:border-0 last:pb-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-semibold text-sm">{r.author || 'Google User'}</span>
-                      <span className="text-xs text-base-content/50">{r.time}</span>
-                    </div>
-                    {renderStars(r.rating)}
-                    <p className="text-sm mt-2 text-base-content/80 line-clamp-3">{r.text}</p>
-                  </div>
-                )) : (
-                  <p className="text-sm text-base-content/50">No reviews found to display.</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Section 8: Actionable Recommendations */}
-          <div className="bg-base-100 rounded-lg shadow-sm border border-base-300 p-6">
-            <h3 className="text-lg font-bold text-base-content mb-4 border-b border-base-200 pb-2">Actionable Recommendations</h3>
-            <div className="space-y-3">
-              {audit.recommendations.map((rec, i) => (
-                <div key={i} className={`flex items-start gap-3 p-4 rounded-lg border ${rec.severity === 'critical' ? 'bg-error/5 border-error/20' : rec.severity === 'warning' ? 'bg-warning/5 border-warning/20' : 'bg-success/5 border-success/20'}`}>
-                  {rec.severity === 'critical' ? <XCircle size={20} className="text-error mt-0.5 flex-shrink-0" /> : 
-                   rec.severity === 'warning' ? <CheckCircle size={20} className="text-warning mt-0.5 flex-shrink-0" /> : 
-                   <CheckCircle size={20} className="text-success mt-0.5 flex-shrink-0" />}
-                  <p className="text-base-content/90 font-medium text-sm leading-relaxed">{rec.text}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
+          <iframe
+            src={preview.url}
+            title="Report PDF preview"
+            className="flex-1 w-full bg-white"
+          />
         </div>
       )}
     </div>

@@ -1,4 +1,7 @@
+/* upload to /root/next-supabase-saas-kit-turbo-main/apps/web/app/[locale]/home/(user)/leadscrapper/_components */
+
 import { getSupabaseServerClient } from '@kit/supabase/server-client';
+import LeadscrapperFrameClient from './LeadscrapperFrameClient';
 
 interface Props {
   page?: string;
@@ -18,13 +21,5 @@ export default async function LeadscrapperFrame({ page, title }: Props) {
 
   const src = `https://leadscrapper.pixnom.com?${params.toString()}`;
 
-  return (
-    <div className="h-[calc(100vh-4rem)]">
-      <iframe
-        src={src}
-        className="h-full w-full border-0"
-        title={title}
-      />
-    </div>
-  );
+  return <LeadscrapperFrameClient src={src} page={page} title={title} />;
 }

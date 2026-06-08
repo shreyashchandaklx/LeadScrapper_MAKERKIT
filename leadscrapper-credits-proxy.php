@@ -16,6 +16,8 @@
 
 header('Content-Type: application/json');
 
+require_once __DIR__ . '/lib/error_logger.php';
+
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit;
@@ -98,9 +100,24 @@ $err = curl_error($ch);
 curl_close($ch);
 
 if ($response === false) {
+    $errorId = log_error('BILL', 'upstream fetch failed: ' . $err, [
+        'user'    => trim($_GET['email'] ?? ''),
+        'action'  => $path,
+        'context' => ['url' => $url],
+    ]);
     http_response_code(502);
-    echo json_encode(['error' => 'upstream fetch failed', 'detail' => $err, 'url' => $url]);
+    echo json_encode(['error' => 'upstream fetch failed', 'detail' => $err, 'url' => $url, 'errorId' => $errorId]);
     exit;
+}
+
+// Upstream itself answered with a server error — log it so the user's Error ID
+// (added below) can be traced even though we pass the body through as-is.
+if ($httpCode >= 500) {
+    log_error('BILL', 'Makerkit credits endpoint returned ' . $httpCode, [
+        'user'    => trim($_GET['email'] ?? ''),
+        'action'  => $path,
+        'context' => ['url' => $url, 'body' => substr((string) $response, 0, 512)],
+    ]);
 }
 
 http_response_code($httpCode ?: 502);

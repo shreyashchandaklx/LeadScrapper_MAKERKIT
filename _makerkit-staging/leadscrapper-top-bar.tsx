@@ -4,8 +4,8 @@ import { getSupabaseServerClient } from '@kit/supabase/server-client';
 import { ServicesDropdown } from './services-dropdown';
 import { NeedHelpDropdown } from './need-help-dropdown';
 
-const BILLING_URL  = '/home/billing';
-const CREDITS_MAX  = 1000; // visual cap for the orange bar; bar fills proportionally up to this
+const BILLING_URL = '/home/billing';
+const CREDITS_MAX = 1000; // visual cap for the orange bar; bar fills proportionally up to this
 
 // Fetches user credits from the same user_credits table the apify-proxy reads.
 // Mirrors logic in apps/web/app/api/supabase/credits/get/route.ts.

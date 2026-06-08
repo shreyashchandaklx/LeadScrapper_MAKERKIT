@@ -9,3 +9,5 @@ dist.zip
 nul
 settings.json
 dist/.env
+# Error logs (lib/error_logger.php writes here)
+logs/*.log

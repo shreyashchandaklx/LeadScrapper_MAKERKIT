@@ -6,9 +6,9 @@ import { ChevronDown } from 'lucide-react';
 
 
 const SERVICES = [
-  { label: 'Map2Web',     href: '/home/map2web/home' },
+  { label: 'Map2Web', href: '/home/map2web/home' },
   { label: 'LeadScrapper', href: '/home/leadscrapper/dashboard' },
-  { label: 'Uptime',      href: '/home/uptime' },
+  { label: 'Uptime', href: '/home/uptime' },
 ];
 
 export function ServicesDropdown() {

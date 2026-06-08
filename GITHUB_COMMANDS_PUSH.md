@@ -1,3 +1,4 @@
+
 # GitHub Push & Troubleshooting Commands
 
 This file documents the commands used to migrate the **LeadScrapper_MAKERKIT** project to GitHub and resolve security/permission issues.

@@ -86,33 +86,35 @@ export default function TopNavbar({ balance, userEmail, onLogout }) {
         Billing
       </a>
 
-      {/* Spacer */}
-      <div className="flex-1" />
+       {/* Spacer */}
+       <div className="flex-1" />
 
-      {/* Credits bar + Upgrade */}
-      <div className="flex items-center gap-3">
-        <div className="hidden md:flex items-center gap-2">
-          <div className="w-24 h-1.5 rounded-full bg-base-200 overflow-hidden">
-            <div
-              className="h-full rounded-full bg-orange-500 transition-all duration-300"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <span className="text-xs text-base-content/70 whitespace-nowrap">
-            {credits === null ? '… Credits left' : `${credits.toLocaleString()} Credits left`}
-          </span>
-        </div>
-        <a
-          href={BILLING_URL}
-          target="_top"
-          rel="noopener noreferrer"
-          className="btn btn-sm btn-primary h-8 min-h-0 px-3 text-xs font-medium"
-        >
-          Upgrade
-        </a>
-      </div>
+       {/* Credits bar + Upgrade */}
+       <div className="flex items-center gap-3">
+         <div className="hidden md:flex items-center gap-2">
+           <div className="w-24 h-1.5 rounded-full bg-base-200 overflow-hidden">
+             <div
+               className="h-full rounded-full bg-orange-500 transition-all duration-300"
+               style={{ width: `${pct}%` }}
+             />
+           </div>
+           <span className="text-xs text-base-content/70 whitespace-nowrap">
+             {credits === null ? '… Credits left' : `${credits.toLocaleString()} Credits left`}
+           </span>
+         </div>
+         <a
+           href={BILLING_URL}
+           target="_top"
+           rel="noopener noreferrer"
+           className="btn btn-sm btn-primary h-8 min-h-0 px-3 text-xs font-medium"
+         >
+           Upgrade
+         </a>
+       </div>
 
-      {/* Need Help? */}
+       <div className="w-4" />
+
+       {/* Need Help? */}
       <Dropdown
         align="right"
         trigger={
@@ -137,13 +139,15 @@ export default function TopNavbar({ balance, userEmail, onLogout }) {
         </a>
       </Dropdown>
 
-      {/* Language */}
-      <div className="hidden sm:flex items-center gap-1 text-sm text-base-content/60">
-        <Globe className="w-4 h-4" />
-        <span>EN</span>
-      </div>
+       {/* Language */}
+       <div className="hidden sm:flex items-center gap-1 text-sm text-base-content/60">
+         <Globe className="w-4 h-4" />
+         <span>EN</span>
+       </div>
 
-      {/* Avatar dropdown */}
+       <div className="w-3" />
+
+       {/* Avatar dropdown */}
       <Dropdown
         align="right"
         trigger={

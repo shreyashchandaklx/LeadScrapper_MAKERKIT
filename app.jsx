@@ -13,6 +13,8 @@ import { PostCreator } from './components/PostCreator.jsx';
 import { EmailOutreach } from './components/EmailOutreach.jsx';
 import { Settings } from './components/Settings.jsx';
 import TopNavbar from './components/TopNavbar.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
+import { logError, MODULES, installGlobalErrorHandlers } from './utils/errorLogger.js';
 
 /* ─── Supabase-backed storage (via leads-proxy.php) ─── */
 function isLocalhost() {
@@ -36,59 +38,59 @@ function leadToBusiness(lead) {
   const raw = lead?._raw || {};
   const parseMaybe = (v) => {
     if (Array.isArray(v) || (v && typeof v === 'object')) return v;
-    if (typeof v === 'string' && v.length) { try { return JSON.parse(v); } catch {} }
+    if (typeof v === 'string' && v.length) { try { return JSON.parse(v); } catch { } }
     return null;
   };
   // Build a Map2Web-shaped business object. Unknown fields stay null/[] so
   // the build templates' optional-chains don't choke.
   return {
-    title:             raw.Title             || lead.business_name || '',
-    subTitle:          null,
-    description:       raw.Description       || lead.description   || null,
-    price:             raw.Price             || lead.price_level   || null,
-    categoryName:      raw.CategoryName      || lead.category      || '',
-    categories:        Array.isArray(lead.all_categories) ? lead.all_categories : [],
-    address:           raw.Address           || lead.address       || '',
-    neighborhood:      raw.Neighborhood      || lead.neighborhood  || null,
-    street:            raw.Street            || '',
-    city:              raw.City              || lead.city          || '',
-    postalCode:        raw.PostalCode        || lead.postal_code   || '',
-    state:             raw.State             || lead.state         || '',
-    countryCode:       raw.CountryCode       || lead.country       || '',
-    phone:             raw.Phone             || lead.phone         || '',
-    phoneUnformatted:  raw.PhoneUnformatted  || '',
+    title: raw.Title || lead.business_name || '',
+    subTitle: null,
+    description: raw.Description || lead.description || null,
+    price: raw.Price || lead.price_level || null,
+    categoryName: raw.CategoryName || lead.category || '',
+    categories: Array.isArray(lead.all_categories) ? lead.all_categories : [],
+    address: raw.Address || lead.address || '',
+    neighborhood: raw.Neighborhood || lead.neighborhood || null,
+    street: raw.Street || '',
+    city: raw.City || lead.city || '',
+    postalCode: raw.PostalCode || lead.postal_code || '',
+    state: raw.State || lead.state || '',
+    countryCode: raw.CountryCode || lead.country || '',
+    phone: raw.Phone || lead.phone || '',
+    phoneUnformatted: raw.PhoneUnformatted || '',
     claimThisBusiness: raw.ClaimThisBusiness === 'false' || raw.ClaimThisBusiness === false || lead.gbp_claimed === true,
-    cid:               raw.Cid               || '',
-    location:          parseMaybe(raw.Location),
-    totalScore:        Number(raw.TotalScore ?? lead.rating ?? 0) || null,
-    reviewsCount:      Number(raw.ReviewsCount ?? lead.review_count ?? 0) || 0,
-    imagesCount:       Number(raw.ImagesCount ?? lead.images_count ?? 0) || 0,
-    imageCategories:   parseMaybe(raw.ImageCategories) || [],
-    peopleAlsoSearch:  parseMaybe(raw.PeopleAlsoSearch) || [],
-    placesTags:        parseMaybe(raw.PlacesTags) || [],
-    reviewsTags:       parseMaybe(raw.ReviewsTags) || [],
-    gasPrices:         parseMaybe(raw.GasPrices) || [],
-    googleFoodUrl:     raw.GoogleFoodUrl || null,
-    hotelAds:          parseMaybe(raw.HotelAds) || [],
-    openingHours:      parseMaybe(raw.OpeningHours) || [],
-    url:               raw.Url || lead.maps_url || '',
-    searchPageUrl:     raw.SearchPageUrl || '',
-    searchString:      raw.SearchString || '',
-    language:          raw.Language || 'en',
-    rank:              Number(raw.Rank ?? 0) || 0,
-    isAdvertisement:   raw.IsAdvertisement === true || raw.IsAdvertisement === 'true' || lead.is_advertinement === true,
-    imageUrl:          raw.ImageUrl || '',
-    kgmid:             raw.Kgmid || '',
-    website:           raw.Website || lead.website || '',
-    additionalInfo:    parseMaybe(raw.AdditionalInfo) || null,
+    cid: raw.Cid || '',
+    location: parseMaybe(raw.Location),
+    totalScore: Number(raw.TotalScore ?? lead.rating ?? 0) || null,
+    reviewsCount: Number(raw.ReviewsCount ?? lead.review_count ?? 0) || 0,
+    imagesCount: Number(raw.ImagesCount ?? lead.images_count ?? 0) || 0,
+    imageCategories: parseMaybe(raw.ImageCategories) || [],
+    peopleAlsoSearch: parseMaybe(raw.PeopleAlsoSearch) || [],
+    placesTags: parseMaybe(raw.PlacesTags) || [],
+    reviewsTags: parseMaybe(raw.ReviewsTags) || [],
+    gasPrices: parseMaybe(raw.GasPrices) || [],
+    googleFoodUrl: raw.GoogleFoodUrl || null,
+    hotelAds: parseMaybe(raw.HotelAds) || [],
+    openingHours: parseMaybe(raw.OpeningHours) || [],
+    url: raw.Url || lead.maps_url || '',
+    searchPageUrl: raw.SearchPageUrl || '',
+    searchString: raw.SearchString || '',
+    language: raw.Language || 'en',
+    rank: Number(raw.Rank ?? 0) || 0,
+    isAdvertisement: raw.IsAdvertisement === true || raw.IsAdvertisement === 'true' || lead.is_advertinement === true,
+    imageUrl: raw.ImageUrl || '',
+    kgmid: raw.Kgmid || '',
+    website: raw.Website || lead.website || '',
+    additionalInfo: parseMaybe(raw.AdditionalInfo) || null,
     reviewsDistribution: parseMaybe(raw.ReviewsDistribution) || null,
     additionalOpeningHours: parseMaybe(raw.AdditionalOpeningHours) || null,
-    locatedIn:         raw.LocatedIn || null,
-    placeId:           raw.PlaceId || lead.place_id || lead.id || '',
+    locatedIn: raw.LocatedIn || null,
+    placeId: raw.PlaceId || lead.place_id || lead.id || '',
     permanentlyClosed: lead.permanently_closed === true,
     temporarilyClosed: false,
-    inputStartUrl:     lead.maps_url || raw.Url || '',
-    scrapedAt:         lead.created_at || new Date().toISOString(),
+    inputStartUrl: lead.maps_url || raw.Url || '',
+    scrapedAt: lead.created_at || new Date().toISOString(),
   };
 }
 
@@ -100,8 +102,8 @@ async function generateSiteForLead(lead, onStage) {
   if (!business.title) throw new Error('lead is missing title — cannot build site');
   return await generateSitesForBusiness(business, {
     userEmail: email,
-    mapsLink:  lead.maps_url || business.url || '',
-    onProgress: onStage || (() => {}),
+    mapsLink: lead.maps_url || business.url || '',
+    onProgress: onStage || (() => { }),
   });
 }
 
@@ -152,6 +154,9 @@ function getUserEmail() {
   return stored;
 }
 
+// Catch-all for anything that escapes component-level handling (logged as GEN)
+installGlobalErrorHandlers(getUserEmail);
+
 /* ─── Storage API (Supabase via leads-proxy.php) ─── */
 
 async function sheetsLoad(email) {
@@ -186,20 +191,67 @@ async function sheetsPost(action, payload) {
     });
     const text = await res.text();
     let json = {};
-    try { json = JSON.parse(text); } catch {}
+    try { json = JSON.parse(text); } catch { }
     console.log('[sheetsPost] response status:', res.status, 'body:', json);
     if (!res.ok) {
       console.error('[sheetsPost] HTTP error:', res.status, json, 'raw:', text.slice(0, 500));
-      alert(`Save failed (${res.status}): ${json.error || text.slice(0, 200)}\n\ndetail: ${json.detail ? String(json.detail).slice(0, 200) : '(none)'}`);
+      // 5xx responses carry the backend's errorId (leads-proxy logged it);
+      // for anything else show/log a frontend one so the user always has an ID.
+      const errorId = json.errorId
+        || logError(MODULES.MGR, `Save failed (${res.status}): ${json.error || text.slice(0, 200)}`, {
+             user: email, component: 'app', action,
+           });
+      alert(`Save failed (${res.status}): ${json.error || text.slice(0, 200)}\n\ndetail: ${json.detail ? String(json.detail).slice(0, 200) : '(none)'}\n\nError ID: ${errorId}`);
     } else if (!json.success) {
       console.error('[sheetsPost] API error:', json);
-      alert(`Save failed: ${json.error}`);
+      const errorId = json.errorId
+        || logError(MODULES.MGR, `Save failed: ${json.error}`, { user: email, component: 'app', action });
+      alert(`Save failed: ${json.error}\n\nError ID: ${errorId}`);
     } else {
       console.log('[sheetsPost] SUCCESS', json);
     }
   } catch (err) {
     console.error('[sheetsPost] EXCEPTION:', err);
-    alert(`Save error: ${err.message}`);
+    const errorId = logError(MODULES.MGR, err, { user: email, component: 'app', action });
+    alert(`Save error: ${err.message}\n\nError ID: ${errorId}`);
+  }
+}
+
+async function sheetsPostSilent(action, payload) {
+  const email = getUserEmail();
+  const payloadSummary = action === 'bulkSaveLeads'
+    ? { count: (payload.leads || []).length, firstId: (payload.leads || [])[0]?.PlaceId }
+    : Object.keys(payload);
+  console.log('[sheetsPostSilent]', action, 'email:', email || '(EMPTY)', 'payload:', payloadSummary);
+  if (!email) {
+    console.error('[sheetsPostSilent] BLOCKED — no email in localStorage. localStorage keys:', Object.keys(localStorage));
+    throw new Error(`Cannot save: no logged-in email found. action: ${action}`);
+  }
+  try {
+    const url = getLeadsProxyUrl();
+    console.log('[sheetsPostSilent] POST', url);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, UserEmail: email, ...payload }),
+    });
+    const text = await res.text();
+    let json = {};
+    try { json = JSON.parse(text); } catch { }
+    console.log('[sheetsPostSilent] response status:', res.status, 'body:', json);
+    if (!res.ok) {
+      console.error('[sheetsPostSilent] HTTP error:', res.status, json, 'raw:', text.slice(0, 500));
+      throw new Error(`Save failed (${res.status}): ${json.error || text.slice(0, 200)}`);
+    } else if (!json.success) {
+      console.error('[sheetsPostSilent] API error:', json);
+      throw new Error(`Save failed: ${json.error}`);
+    } else {
+      console.log('[sheetsPostSilent] SUCCESS', json);
+      return json;
+    }
+  } catch (err) {
+    console.error('[sheetsPostSilent] EXCEPTION:', err);
+    throw err;
   }
 }
 
@@ -365,6 +417,10 @@ const App = () => {
     return 'search';
   };
   const [page, setPage] = useState(getInitialPage);
+  // Remember where we navigated to LeadDetail from, so its back button
+  // returns to that page (Lead Manager / Find Leads / Dashboard) instead
+  // of always landing on Find Leads.
+  const [prevPage, setPrevPage] = useState('search');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedLeadId, setSelectedLeadId] = useState(null);
   const [leads, setLeads] = useState([]);
@@ -392,6 +448,25 @@ const App = () => {
   }, []);
 
   useEffect(() => { refreshBalance(); }, [refreshBalance]);
+
+  // When embedded in the Makerkit shell, listen for `setPage` messages from
+  // the parent so clicking a sidebar link (even one pointing at the URL we're
+  // already on) snaps the SPA back to that section. Without this, the iframe
+  // can drift (e.g. into LeadDetail → back → Find Leads) while the parent URL
+  // still says /lead-manager, and the sidebar's Lead Manager link would be a
+  // no-op until the user navigated elsewhere first.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onMessage = (e) => {
+      if (e.origin && e.origin !== 'https://app.pixnom.com') return;
+      const data = e.data;
+      if (!data || data.type !== 'leadscrapper:setPage' || typeof data.page !== 'string') return;
+      setSelectedLeadId(null);
+      setPage(data.page);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
 
   // Generate sites for N leads sequentially via Map2Web. For each lead we run
   // build×3 → publish×3 → log, then persist tier URLs back to Supabase.
@@ -459,7 +534,11 @@ const App = () => {
         if (data.reports) setReports(data.reports.map(sheetRowToReport));
       }
       setLoading(false);
-    }).catch(err => { console.error('[sheetsLoad] catch', err); setLoading(false); });
+    }).catch(err => {
+      console.error('[sheetsLoad] catch', err);
+      logError(MODULES.MGR, err, { user: getUserEmail(), component: 'app', action: 'load' });
+      setLoading(false);
+    });
   }, []);
 
   const handleLogout = useCallback(() => {
@@ -470,12 +549,18 @@ const App = () => {
 
   const navigate = useCallback((p, leadId) => {
     if (leadId) setSelectedLeadId(leadId);
-    setPage(p);
+    setPage(prev => {
+      if (p === 'detail' && prev !== 'detail') setPrevPage(prev);
+      return p;
+    });
   }, []);
 
   const handleViewDetail = useCallback((leadId) => {
     setSelectedLeadId(leadId);
-    setPage('detail');
+    setPage(prev => {
+      if (prev !== 'detail') setPrevPage(prev);
+      return 'detail';
+    });
   }, []);
 
   const handleSaveLead = useCallback((lead) => {
@@ -555,6 +640,30 @@ const App = () => {
     sheetsPost('updateLead', { PlaceId: leadId, fields: { Status: 'contacted' } });
   }, [leads]);
 
+  // Reports live in localStorage (the PHP proxy has no saveReport/deleteReport
+  // actions — calling them produced the 400 "unknown action: saveReport"
+  // alert sir was seeing). Key per user email so accounts don't collide.
+  const reportsStorageKey = useCallback(() => {
+    const email = getUserEmail();
+    return email ? `leadscrapper:reports:${email}` : 'leadscrapper:reports:_anon';
+  }, []);
+
+  const persistReports = useCallback((rs) => {
+    try { localStorage.setItem(reportsStorageKey(), JSON.stringify(rs)); }
+    catch (e) { console.warn('[reports] persist failed', e); }
+  }, [reportsStorageKey]);
+
+  // Load any previously-saved reports for this user on mount.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(reportsStorageKey());
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setReports(parsed);
+      }
+    } catch (e) { console.warn('[reports] load failed', e); }
+  }, [reportsStorageKey]);
+
   const handleGenerateReport = useCallback((leadId) => {
     const lead = leads.find(l => l.id === leadId);
     if (!lead) return;
@@ -565,48 +674,54 @@ const App = () => {
       created_at: new Date().toISOString(),
       score: lead.score,
     };
-    setReports(prev => [newReport, ...prev]);
-    sheetsPost('saveReport', {
-      report: {
-        ReportId: newReport.id,
-        LeadId: newReport.lead_id,
-        LeadName: newReport.lead_name,
-        CreatedAt: newReport.created_at,
-        Score: newReport.score,
-      }
+    setReports(prev => {
+      const next = [newReport, ...prev];
+      persistReports(next);
+      return next;
     });
-  }, [leads]);
+  }, [leads, persistReports]);
 
-  const handleGoToReport = useCallback((leadId) => {
-    setSelectedLeadId(leadId);
-    setPage('reports');
-  }, []);
+   const handleDeleteReport = useCallback((reportId) => {
+     setReports(prev => {
+       const next = prev.filter(r => r.id !== reportId);
+       persistReports(next);
+       return next;
+     });
+   }, [persistReports]);
 
   const selectedLead = useMemo(() => leads.find(l => l.id === selectedLeadId), [leads, selectedLeadId]);
+
+  // Wrap a view in an ErrorBoundary so a crash in one module shows an Error ID
+  // card instead of killing the whole app (module tag lands in the log file).
+  const bounded = (module, componentName, node) => (
+    <ErrorBoundary module={module} componentName={componentName} user={getUserEmail()}>
+      {node}
+    </ErrorBoundary>
+  );
 
   const renderPage = () => {
     switch (page) {
       case 'dashboard':
-        return <Dashboard leads={leads} emails={emails} reports={reports} onNavigate={navigate} />;
+        return bounded(MODULES.GEN, 'Dashboard', <Dashboard leads={leads} emails={emails} reports={reports} onNavigate={navigate} />);
       case 'detail':
-        if (!selectedLead) { setPage('search'); return null; }
-        return <LeadDetail lead={selectedLead} onBack={() => setPage('search')} onGenerateEmail={handleGenerateEmail} onGenerateReport={handleGoToReport} />;
+        if (!selectedLead) { setPage(prevPage); return null; }
+        return bounded(MODULES.MGR, 'LeadDetail', <LeadDetail lead={selectedLead} onBack={() => setPage(prevPage)} onGenerateEmail={handleGenerateEmail} onGenerateReport={handleGoToReport} />);
       case 'leads':
-        return <LeadManager leads={leads} onViewDetail={handleViewDetail} onUpdateStatus={handleUpdateStatus} onUpdateNotes={handleUpdateNotes} onDeleteLead={handleDeleteLead} onGenerateEmail={handleGenerateEmail} onGenerateSites={handleGenerateSites} siteGen={siteGen} onCancelSiteGen={handleCancelSiteGen} />;
+        return bounded(MODULES.MGR, 'LeadManager', <LeadManager leads={leads} onViewDetail={handleViewDetail} onUpdateStatus={handleUpdateStatus} onUpdateNotes={handleUpdateNotes} onDeleteLead={handleDeleteLead} onGenerateEmail={handleGenerateEmail} onGenerateSites={handleGenerateSites} siteGen={siteGen} onCancelSiteGen={handleCancelSiteGen} />);
       case 'email-gen':
-        return <EmailGenerator leads={leads} selectedLeadId={selectedLeadId} onSendEmail={handleSendEmail} />;
-      case 'reports':
-        return <ReportGenerator leads={leads} reports={reports} selectedLeadId={selectedLeadId} onGenerateReport={handleGenerateReport} />;
+        return bounded(MODULES.GEN, 'EmailGenerator', <EmailGenerator leads={leads} selectedLeadId={selectedLeadId} onSendEmail={handleSendEmail} />);
+       case 'reports':
+         return bounded(MODULES.RPT, 'ReportGenerator', <ReportGenerator leads={leads} reports={reports} selectedLeadId={selectedLeadId} onGenerateReport={handleGenerateReport} onDeleteReport={handleDeleteReport} />);
       case 'review':
-        return <ReviewResponder />;
+        return bounded(MODULES.GEN, 'ReviewResponder', <ReviewResponder />);
       case 'posts':
-        return <PostCreator />;
+        return bounded(MODULES.GEN, 'PostCreator', <PostCreator />);
       case 'outreach':
-        return <EmailOutreach emails={emails} />;
+        return bounded(MODULES.GEN, 'EmailOutreach', <EmailOutreach emails={emails} />);
       case 'settings':
-        return <Settings />;
+        return bounded(MODULES.GEN, 'Settings', <Settings />);
       default:
-        return <Dashboard leads={leads} emails={emails} reports={reports} onNavigate={navigate} />;
+        return bounded(MODULES.GEN, 'Dashboard', <Dashboard leads={leads} emails={emails} reports={reports} onNavigate={navigate} />);
     }
   };
 
@@ -628,18 +743,20 @@ const App = () => {
               <>
                 <div style={{ display: page === 'search' ? 'block' : 'none' }}>
                   {/* onViewLead does NOT auto-save — only explicit Save/Bookmark button saves */}
-                  <LeadSearch
-                    onViewLead={(lead) => { handleViewDetail(lead.id); }}
-                    onSaveLead={handleSaveLead}
-                    onBulkSaveLeads={handleBulkSaveLeads}
-                    savedLeadIds={leads.map(l => l.id)}
-                    leads={leads}
-                    onGenerateSites={handleGenerateSites}
-                    siteGen={siteGen}
-                    onCancelSiteGen={handleCancelSiteGen}
-                    balance={balance}
-                    onRefreshBalance={refreshBalance}
-                  />
+                  <ErrorBoundary module={MODULES.LEAD} componentName="LeadSearch" user={getUserEmail()}>
+                    <LeadSearch
+                      onViewLead={(lead) => { handleViewDetail(lead.id); }}
+                      onSaveLead={handleSaveLead}
+                      onBulkSaveLeads={handleBulkSaveLeads}
+                      savedLeadIds={leads.map(l => l.id)}
+                      leads={leads}
+                      onGenerateSites={handleGenerateSites}
+                      siteGen={siteGen}
+                      onCancelSiteGen={handleCancelSiteGen}
+                      balance={balance}
+                      onRefreshBalance={refreshBalance}
+                    />
+                  </ErrorBoundary>
                 </div>
                 {page !== 'search' && renderPage()}
               </>

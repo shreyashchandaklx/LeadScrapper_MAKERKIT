@@ -31,6 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/lib/supabase.php';
 require_once __DIR__ . '/lib/credits.php';
+require_once __DIR__ . '/lib/error_logger.php';
 
 const POOL_TABLE  = 'leadscrapper_leads_data';   // cache rows only after 003
 const STATE_TABLE = 'user_leadscrapper_leads';   // per-user state
@@ -43,6 +44,15 @@ function fail($code, $msg, $extra = null) {
     http_response_code($code);
     $out = ['success' => false, 'error' => $msg];
     if ($extra !== null) $out['detail'] = $extra;
+    // Real failures (5xx) get an Error ID logged to logs/ and shown to the user.
+    // 4xx are user/input errors — not bugs, not logged.
+    if ($code >= 500) {
+        $out['errorId'] = log_error('MGR', $msg, [
+            'user'    => strtolower(trim($GLOBALS['body']['UserEmail'] ?? $_GET['email'] ?? '')) ?: 'anonymous',
+            'action'  => (string) ($GLOBALS['action'] ?? ($_GET['action'] ?? '')),
+            'context' => ['detail' => is_string($extra) ? substr($extra, 0, 1024) : $extra],
+        ]);
+    }
     echo json_encode($out);
     exit;
 }

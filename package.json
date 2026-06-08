@@ -5,14 +5,15 @@
     "dev": "vite",
     "build": "vite build && npm run copy-php",
     "preview": "vite preview",
-    "copy-php": "node -e \"const fs=require('fs'),path=require('path');['.env','send-otp.php','apify-proxy.php','extract-email.php','sheets-proxy.php','shorten-url.php','leads-proxy.php','map2web-proxy.php','leadscrapper-credits-proxy.php','debug.php'].forEach(f=>{if(fs.existsSync(f))fs.copyFileSync(f,'dist/'+f)});fs.mkdirSync('dist/lib',{recursive:true});['supabase.php','credits.php','supabase_cache.php'].forEach(f=>{if(fs.existsSync('lib/'+f))fs.copyFileSync('lib/'+f,'dist/lib/'+f)})\""
+    "copy-php": "node -e \"const fs=require('fs'),path=require('path');['.env','send-otp.php','apify-proxy.php','extract-email.php','sheets-proxy.php','shorten-url.php','leads-proxy.php','map2web-proxy.php','leadscrapper-credits-proxy.php','error-log.php'].forEach(f=>{if(fs.existsSync(f))fs.copyFileSync(f,'dist/'+f)});fs.mkdirSync('dist/lib',{recursive:true});['supabase.php','credits.php','supabase_cache.php','error_logger.php'].forEach(f=>{if(fs.existsSync('lib/'+f))fs.copyFileSync('lib/'+f,'dist/lib/'+f)})\""
   },
   "dependencies": {
     "country-state-city": "^3.2.1",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.523.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "zipcodes": "^8.0.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.0.1",

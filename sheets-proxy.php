@@ -14,6 +14,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+require_once __DIR__ . '/lib/error_logger.php';
+
 $gasUrl = $_GET['gasUrl'] ?? '';
 if (!$gasUrl || strpos($gasUrl, 'script.google.com') === false) {
     http_response_code(400);
@@ -39,8 +41,11 @@ if ($method === 'GET') {
     curl_close($ch);
 
     if ($response === false) {
+        $errorId = log_error('GEN', 'sheets-proxy curl error (GET): ' . $error, [
+            'context' => ['gasUrl' => substr($gasUrl, 0, 256)],
+        ]);
         http_response_code(500);
-        echo json_encode(['error' => 'Curl error: ' . $error]);
+        echo json_encode(['error' => 'Curl error: ' . $error, 'errorId' => $errorId]);
     } else {
         http_response_code($httpCode);
         echo $response;
@@ -61,8 +66,11 @@ if ($method === 'GET') {
     curl_close($ch);
 
     if ($response === false) {
+        $errorId = log_error('GEN', 'sheets-proxy curl error (POST): ' . $error, [
+            'context' => ['gasUrl' => substr($gasUrl, 0, 256)],
+        ]);
         http_response_code(500);
-        echo json_encode(['error' => 'Curl error: ' . $error]);
+        echo json_encode(['error' => 'Curl error: ' . $error, 'errorId' => $errorId]);
     } else {
         http_response_code($httpCode);
         echo $response;

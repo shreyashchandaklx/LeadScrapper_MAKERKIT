@@ -1,19 +1,26 @@
 <?php
 error_reporting(E_ALL);
 ini_set('display_errors', '0');
+require_once __DIR__ . '/lib/error_logger.php';
 set_error_handler(function($errno, $errstr, $errfile, $errline) {
     if (!(error_reporting() & $errno)) return;
+    $errorId = log_error('LEAD', "PHP Error [$errno]: $errstr in $errfile:$errline", [
+        'action' => $_GET['action'] ?? 'run',
+    ]);
     header('Content-Type: application/json');
     http_response_code(500);
-    echo json_encode(['error' => "PHP Error [$errno]: $errstr in $errfile:$errline"]);
+    echo json_encode(['error' => "PHP Error [$errno]: $errstr in $errfile:$errline", 'errorId' => $errorId]);
     exit;
 });
 register_shutdown_function(function() {
     $error = error_get_last();
     if ($error !== null && ($error['type'] === E_ERROR || $error['type'] === E_PARSE || $error['type'] === E_COMPILE_ERROR)) {
+        $errorId = log_error('LEAD', "PHP Fatal Error: " . $error['message'] . " in " . $error['file'] . ":" . $error['line'], [
+            'action' => $_GET['action'] ?? 'run',
+        ]);
         header('Content-Type: application/json');
         http_response_code(500);
-        echo json_encode(['error' => "PHP Fatal Error: " . $error['message'] . " in " . $error['file'] . ":" . $error['line']]);
+        echo json_encode(['error' => "PHP Fatal Error: " . $error['message'] . " in " . $error['file'] . ":" . $error['line'], 'errorId' => $errorId]);
     }
 });
 /**
@@ -88,8 +95,9 @@ if (empty($allTokens)) {
 }
 
 if (empty($allTokens)) {
+    $errorId = log_error('LEAD', 'No Apify API keys configured in .env', ['action' => $action]);
     http_response_code(500);
-    echo json_encode(['error' => 'No Apify API keys configured in .env']);
+    echo json_encode(['error' => 'No Apify API keys configured in .env', 'errorId' => $errorId]);
     exit;
 }
 
@@ -234,6 +242,11 @@ function applyCreditSlice($allPlaces, $billing, $cacheKey, $cacheHelper)
             error_log('[applyCreditSlice] credits_deduct_leads failed for ' . $email
                 . ' status=' . ($r['status'] ?? '?')
                 . ' body=' . json_encode($r));
+            $deductionErrorId = log_error('BILL', 'credits_deduct_leads failed: ' . ($r['error'] ?? $r['message'] ?? 'unknown'), [
+                'user'    => $email,
+                'action'  => 'applyCreditSlice',
+                'context' => ['status' => $r['status'] ?? null, 'leadCount' => $leadCount],
+            ]);
             $placesToDeliver = [];
             $charge          = 0.0;
             $deductionFailed = true;
@@ -306,6 +319,7 @@ function applyCreditSlice($allPlaces, $billing, $cacheKey, $cacheHelper)
         'source'          => $effectiveSrc,
         'deductionFailed' => $deductionFailed,
         'deductionError'  => $deductionError,
+        'errorId'         => $deductionErrorId ?? null,
     ];
 }
 
@@ -409,10 +423,15 @@ function apifyRequest(
     }
 
     // All keys exhausted
+    $errorId = log_error('LEAD', 'All Apify API keys exhausted or blocked', [
+        'action'  => $_GET['action'] ?? 'run',
+        'context' => ['totalKeys' => $totalKeys],
+    ]);
     return [
         'result' => json_encode([
             'error' => 'All Apify API keys exhausted or blocked',
             'message' => 'All ' . $totalKeys . ' configured keys returned quota/access errors.',
+            'errorId' => $errorId,
         ]),
         'httpCode' => 503,
     ];
@@ -439,8 +458,11 @@ if ($action === 'run') {
     $balance = credits_get_balance($userEmail);
 
     if ($balance === null) {
+        $errorId = log_error('BILL', 'Could not verify credit balance with Makerkit', [
+            'user' => $userEmail, 'action' => $action,
+        ]);
         http_response_code(502);
-        echo json_encode(['error' => 'Could not verify credit balance with Makerkit']);
+        echo json_encode(['error' => 'Could not verify credit balance with Makerkit', 'errorId' => $errorId]);
         exit;
     }
     if ($balance < CREDIT_PER_LEAD) {
@@ -716,8 +738,11 @@ if ($action === 'run') {
     }
     $bal = credits_get_balance($email);
     if ($bal === null) {
+        $errorId = log_error('BILL', 'Could not reach credit service', [
+            'user' => $email, 'action' => $action,
+        ]);
         http_response_code(502);
-        echo json_encode(['error' => 'Could not reach credit service']);
+        echo json_encode(['error' => 'Could not reach credit service', 'errorId' => $errorId]);
         exit;
     }
     echo json_encode([

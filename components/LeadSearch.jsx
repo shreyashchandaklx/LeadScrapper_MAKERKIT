@@ -17,7 +17,7 @@
  * - Generates sites for leads (via onGenerateSites callback).
  */
 
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import {
   Search, MapPin, Filter, ChevronDown, ChevronUp, Star, Globe, Phone, Plus, Eye, AlertTriangle, Loader2,
   Download, Save, CheckCircle, Hash, Clock, Image, Tag, ExternalLink, ShieldCheck, ShieldX, MapPinned, Building,
@@ -25,8 +25,15 @@ import {
 } from 'lucide-react';
 import { getScoreColor, getScoreLabel } from '../utils/helpers.js';
 import { extractEmailForUrl, getExtractEmailUrl } from '../utils/emailExtractor.js';
+import { logError, extractErrorId, MODULES } from '../utils/errorLogger.js';
 import { Country, State, City } from 'country-state-city';
+import zipcodes from 'zipcodes';
 import SearchableDropdown from './SearchableDropdown.jsx';
+
+// In-memory cache for non-US ZIP fetches keyed by `${country}|${state}|${city}`.
+// Lives across re-renders inside the module so re-picking the same city is instant.
+const ZIP_API_CACHE = new Map();
+const ZIP_INFLIGHT = new Map(); // de-duplicate concurrent fetches for the same city
 
 // Use the local PHP proxy for all Apify tasks
 // to securely keep API keys hidden on the backend.
@@ -262,6 +269,108 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
     [country, selectedState]
   );
 
+  // ZIP cascade:
+  //   • US  → bundled `zipcodes` package — offline, instant.
+  //   • IN  → api.postalpincode.in (India Post, free, no key, CORS-enabled). Filtered by state name.
+  //   • else → Zippopotam (free, no key, CORS-enabled).
+  // All API responses are cached in module-level Maps so re-picking the same city is instant.
+  // Unsupported countries fall back gracefully to a free-text ZIP input.
+  const [zipOptions, setZipOptions] = useState([]); // string[]
+  const [zipLoading, setZipLoading] = useState(false);
+  const [zipApiSupported, setZipApiSupported] = useState(true); // false → render text input fallback
+
+  useEffect(() => {
+    // No city picked yet → nothing to do.
+    if (!country || !selectedState || !selectedCity) {
+      setZipOptions([]);
+      setZipLoading(false);
+      setZipApiSupported(true);
+      return;
+    }
+
+    // Fast path: US uses bundled `zipcodes` package — fully offline, instant.
+    if (country === 'US') {
+      try {
+        const rows = zipcodes.lookupByName(selectedCity, selectedState) || [];
+        const codes = Array.from(new Set(rows.map(r => String(r.zip)))).sort();
+        setZipOptions(codes);
+        setZipApiSupported(codes.length > 0);
+      } catch {
+        setZipOptions([]);
+        setZipApiSupported(false);
+      }
+      setZipLoading(false);
+      return;
+    }
+
+    // Non-US path: fetch from a country-appropriate free API, with module-level cache.
+    const key = `${country}|${selectedState}|${selectedCity}`;
+    if (ZIP_API_CACHE.has(key)) {
+      const cached = ZIP_API_CACHE.get(key);
+      setZipOptions(cached.codes);
+      setZipApiSupported(cached.supported);
+      setZipLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setZipLoading(true);
+
+    // Resolve a friendly state name for India's API (which expects the full state name
+    // like "Maharashtra", not the ISO code "MH"). Falls back to ISO if not found.
+    const resolvedStateName =
+      (country ? State.getStatesOfCountry(country) : [])
+        .find(s => s.isoCode === selectedState)?.name || selectedState;
+
+    const fetchZips = async () => {
+      // Deduplicate parallel fetches for the same key (e.g. StrictMode double-effect).
+      if (!ZIP_INFLIGHT.has(key)) {
+        const promise = (async () => {
+          try {
+            if (country === 'IN') {
+              // India Post: returns up to 31+ post offices per city query, with State field
+              // so we can filter to just the user's selected state.
+              const res = await fetch(`https://api.postalpincode.in/postoffice/${encodeURIComponent(selectedCity)}`);
+              if (!res.ok) return { codes: [], supported: false };
+              const data = await res.json();
+              const entry = Array.isArray(data) ? data[0] : null;
+              const offices = entry?.PostOffice || [];
+              const targetState = resolvedStateName.toLowerCase();
+              const filtered = offices.filter(o => (o.State || '').toLowerCase() === targetState);
+              // If no rows matched the state (e.g. ambiguous city name in different states),
+              // fall back to all rows so the user still sees something.
+              const rows = filtered.length > 0 ? filtered : offices;
+              const codes = Array.from(new Set(rows.map(o => String(o.Pincode)))).sort();
+              return { codes, supported: codes.length > 0 };
+            }
+            // Default: Zippopotam — works for US (already handled above), UK, DE, CA, ~70 more.
+            const cc = country.toLowerCase();
+            const region = encodeURIComponent(selectedState.toLowerCase());
+            const place = encodeURIComponent(selectedCity.toLowerCase());
+            const res = await fetch(`https://api.zippopotam.us/${cc}/${region}/${place}`);
+            if (!res.ok) return { codes: [], supported: false };
+            const data = await res.json();
+            const codes = Array.from(new Set((data.places || []).map(p => String(p['post code'])))).sort();
+            return { codes, supported: codes.length > 0 };
+          } catch {
+            return { codes: [], supported: false };
+          }
+        })();
+        ZIP_INFLIGHT.set(key, promise);
+      }
+      const result = await ZIP_INFLIGHT.get(key);
+      ZIP_INFLIGHT.delete(key);
+      ZIP_API_CACHE.set(key, result);
+      if (cancelled) return;
+      setZipOptions(result.codes);
+      setZipApiSupported(result.supported);
+      setZipLoading(false);
+    };
+    fetchZips();
+
+    return () => { cancelled = true; };
+  }, [country, selectedState, selectedCity]);
+
   // Resolve display names from ISO codes for the location chip + Apify payload.
   const countryName = useMemo(
     () => allCountries.find(c => c.isoCode === country)?.name || country,
@@ -395,15 +504,21 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
       }
       if (runResponse.status === 503) { // Apify keys exhausted
         const errorData = await runResponse.json().catch(() => ({}));
-        throw new Error("Server capacity reached (Apify keys exhausted). Please contact support or try again later.");
+        const err503 = new Error("Server capacity reached (Apify keys exhausted). Please contact support or try again later.");
+        err503.errorId = extractErrorId(errorData); // backend already logged it
+        throw err503;
       }
       if (!runResponse.ok) { // Other API errors
         const errorData = await runResponse.json().catch(() => ({}));
         const msg = errorData?.error?.message || errorData?.error || errorData?.message || `Failed to start Apify run (${runResponse.status})`;
-        if (msg.includes('Apify API keys exhausted')) {
-          throw new Error("Server capacity reached (Apify keys exhausted). Please contact support or try again later.");
-        }
-        throw new Error(msg);
+        const errOther = new Error(
+          msg.includes('Apify API keys exhausted')
+            ? "Server capacity reached (Apify keys exhausted). Please contact support or try again later."
+            : msg
+        );
+        errOther.errorId = extractErrorId(errorData); // backend already logged it
+        errOther.httpStatus = runResponse.status;
+        throw errOther;
       }
 
       const runData = await runResponse.json();
@@ -508,8 +623,21 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
 
     } catch (error) {
       console.error('Search operation failed:', error);
-      setProgress(`Error: ${error.message}`);
-      alert(`Search failed: ${error.message}`); // Alert user to the error
+      // Use the backend's errorId when the proxy already logged it; otherwise
+      // log from here. Insufficient-credits (402) is a user condition, not a bug
+      // — show it without an Error ID and don't log it.
+      const isUserError = /insufficient credits/i.test(error.message || '');
+      let errorId = error.errorId || null;
+      if (!errorId && !isUserError) {
+        errorId = logError(MODULES.LEAD, error, {
+          user: userEmail || 'anonymous',
+          component: 'LeadSearch',
+          action: 'search',
+        });
+      }
+      const suffix = errorId ? `\n\nError ID: ${errorId}` : '';
+      setProgress(`Error: ${error.message}${errorId ? ` (Error ID: ${errorId})` : ''}`);
+      alert(`Search failed: ${error.message}${suffix}`); // Alert user to the error
     } finally {
       // Cleanup timer and loading state
       if (timerRef.current) clearInterval(timerRef.current);
@@ -880,6 +1008,7 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
                 setCountry(match ? match.isoCode : '');
                 setSelectedState('');
                 setSelectedCity('');
+                setZipCode('');
               }}
               searchPlaceholder="Search countries..."
             />
@@ -921,6 +1050,7 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
                 const match = statesList.find(s => s.name === name);
                 setSelectedState(match ? match.isoCode : '');
                 setSelectedCity('');
+                setZipCode('');
                 // Advance focus to City as soon as a state is picked.
                 setTimeout(() => {
                   cityRef.current?.focus();
@@ -943,7 +1073,12 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
               value={selectedCity}
               onChange={(name) => {
                 setSelectedCity(name);
-                setTimeout(() => zipRef.current?.focus(), 50);
+                setZipCode('');
+                // Advance focus to ZIP — opens dropdown if API/offline returned options.
+                setTimeout(() => {
+                  zipRef.current?.focus?.();
+                  zipRef.current?.open?.();
+                }, 50);
               }}
               disabled={!selectedState && citiesList.length === 0}
               searchPlaceholder="Search cities..."
@@ -952,23 +1087,43 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
 
           <span className="text-base-content/60">,</span>
 
-          {/* ZIP / Postal Code */}
-          <input
-            ref={zipRef}
-            type="text"
-            placeholder="ZIP / PIN"
-            value={zipCode}
-            onChange={e => setZipCode(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                if (!loading && keyword.trim() && country && selectedState && zipCode.trim()) {
-                  handleSearch();
+          {/* ZIP / Postal Code — dropdown when options are available (US offline, others via Zippopotam),
+              spinner while fetching non-US, plain text input fallback when API can't supply codes. */}
+          {zipLoading ? (
+            <div className="inline-flex items-center gap-2 h-9 px-3 w-[180px] rounded border border-base-300 bg-base-200/50 text-sm text-base-content/50">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading ZIPs…
+            </div>
+          ) : zipApiSupported && zipOptions.length > 0 ? (
+            <div className="w-[180px]">
+              <SearchableDropdown
+                ref={zipRef}
+                placeholder="ZIP / PIN"
+                options={zipOptions}
+                value={zipCode}
+                onChange={(code) => setZipCode(code)}
+                disabled={!selectedCity}
+                searchPlaceholder="Search ZIPs..."
+              />
+            </div>
+          ) : (
+            <input
+              ref={zipRef}
+              type="text"
+              placeholder="ZIP / PIN"
+              value={zipCode}
+              onChange={e => setZipCode(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  if (!loading && keyword.trim() && country && selectedState && zipCode.trim()) {
+                    handleSearch();
+                  }
                 }
-              }
-            }}
-            className="input input-bordered h-9 px-3 text-sm w-[140px]"
-          />
+              }}
+              className="input input-bordered h-9 px-3 text-sm w-[140px]"
+            />
+          )}
 
           {/* Search button */}
           <button
