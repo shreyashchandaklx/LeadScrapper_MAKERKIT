@@ -607,6 +607,13 @@ const App = () => {
     setPage('email-gen');
   }, []);
 
+  // From LeadDetail: jump to the Reports page with this lead pre-selected
+  // (was referenced at the LeadDetail render but never defined — ERR-LS-GEN-MQ69TGP0-FF3C)
+  const handleGoToReport = useCallback((leadId) => {
+    setSelectedLeadId(leadId);
+    setPage('reports');
+  }, []);
+
   const handleSendEmail = useCallback((leadId, subject, body, fromEmail, toEmail) => {
     const lead = leads.find(l => l.id === leadId);
     if (!lead) return;
