@@ -2,6 +2,8 @@
 error_reporting(E_ALL);
 ini_set('display_errors', '0');
 require_once __DIR__ . '/lib/error_logger.php';
+require_once __DIR__ . '/lib/activity_logger.php';
+require_once __DIR__ . '/lib/keyword_normalize.php';
 set_error_handler(function($errno, $errstr, $errfile, $errline) {
     if (!(error_reporting() & $errno)) return;
     $errorId = log_error('LEAD', "PHP Error [$errno]: $errstr in $errfile:$errline", [
@@ -137,7 +139,9 @@ $supabaseCache = getSupabaseCache();
  */
 function buildCacheKey($keyword, $location)
 {
-    return strtolower(trim($keyword)) . '|' . strtolower(trim($location));
+    // normalize_keyword collapses casing/whitespace + regular plurals so
+    // "electrician"/"electricians" share one pool (see lib/keyword_normalize.php).
+    return normalize_keyword($keyword) . '|' . strtolower(trim($location));
 }
 
 /**
@@ -303,6 +307,21 @@ function applyCreditSlice($allPlaces, $billing, $cacheKey, $cacheHelper)
         $charge,
         $effectiveSrc
     );
+
+    // User-activity log (best-effort, never throws). Backend can't tell a single
+    // ZIP search from a city-scrape per-ZIP pull (identical postalCode requests),
+    // so everything is 'search' with the location in meta — honest, not guessed.
+    // The frontend city flow emits its own 'city_search' summary event separately.
+    log_activity($email, 'search', [
+        'count'  => $deliveredCount,
+        'source' => 'backend',
+        'meta'   => [
+            'keyword'  => $keyword,
+            'location' => $locationLabel,
+            'charged'  => $charge,
+            'src'      => $effectiveSrc,
+        ],
+    ]);
 
     $totalDelivered = count($delivered);
     if (!$deductionFailed) {

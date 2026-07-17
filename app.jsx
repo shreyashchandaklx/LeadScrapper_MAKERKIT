@@ -1,20 +1,27 @@
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { generateLeads, generateEmails, generateReports } from './utils/mockData.js';
+// Eagerly loaded — part of the initial shell / first paint.
 import { Sidebar } from './components/Sidebar.jsx';
 import { Dashboard } from './components/Dashboard.jsx';
-import LeadSearch from './components/LeadSearch.jsx';
-import { LeadDetail } from './components/LeadDetail.jsx';
-import { LeadManager } from './components/LeadManager.jsx';
-import { EmailGenerator } from './components/EmailGenerator.jsx';
-import { ReportGenerator } from './components/ReportGenerator.jsx';
-import { ReviewResponder } from './components/ReviewResponder.jsx';
-import { PostCreator } from './components/PostCreator.jsx';
-import { EmailOutreach } from './components/EmailOutreach.jsx';
-import { Settings } from './components/Settings.jsx';
 import TopNavbar from './components/TopNavbar.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import { logError, MODULES, installGlobalErrorHandlers } from './utils/errorLogger.js';
+import { logActivity, EVENTS } from './utils/activityLogger.js';
+
+// Lazily loaded — each becomes its own Rollup chunk so the heavy libraries they
+// pull in (LeadSearch → country-state-city ~7.7MB + zipcodes; ReportGenerator →
+// jspdf + html2canvas) only download the first time that page is opened, instead
+// of bloating the initial bundle and causing the white-screen-on-load.
+const LeadSearch      = lazy(() => import('./components/LeadSearch.jsx'));
+const LeadDetail      = lazy(() => import('./components/LeadDetail.jsx').then(m => ({ default: m.LeadDetail })));
+const LeadManager     = lazy(() => import('./components/LeadManager.jsx').then(m => ({ default: m.LeadManager })));
+const EmailGenerator  = lazy(() => import('./components/EmailGenerator.jsx').then(m => ({ default: m.EmailGenerator })));
+const ReportGenerator = lazy(() => import('./components/ReportGenerator.jsx').then(m => ({ default: m.ReportGenerator })));
+const ReviewResponder = lazy(() => import('./components/ReviewResponder.jsx').then(m => ({ default: m.ReviewResponder })));
+const PostCreator     = lazy(() => import('./components/PostCreator.jsx').then(m => ({ default: m.PostCreator })));
+const EmailOutreach   = lazy(() => import('./components/EmailOutreach.jsx').then(m => ({ default: m.EmailOutreach })));
+const Settings        = lazy(() => import('./components/Settings.jsx').then(m => ({ default: m.Settings })));
 
 /* ─── Supabase-backed storage (via leads-proxy.php) ─── */
 function isLocalhost() {
@@ -94,7 +101,7 @@ function leadToBusiness(lead) {
   };
 }
 
-/* Generate Basic/Gold/Premium sites for ONE lead via Map2Web. Returns {tier1,tier2,tier3} or throws. */
+/* Generate Basic + Gold sites for ONE lead via Map2Web. Returns {tier1,tier2,templateBase} or throws. */
 async function generateSiteForLead(lead, onStage) {
   const email = getUserEmail();
   if (!email) throw new Error('no logged-in email');
@@ -119,10 +126,12 @@ async function persistTiersToSupabase(placeId, urls) {
         action: 'updateLead',
         UserEmail: email,
         PlaceId: placeId,
+        // Only write the tiers we actually generated (basic + gold). Tier3 is
+        // no longer produced — omit it so any existing value is preserved
+        // rather than blanked out.
         fields: {
           Tier1: urls.tier1 || '',
           Tier2: urls.tier2 || '',
-          Tier3: urls.tier3 || '',
         },
       }),
     });
@@ -168,6 +177,21 @@ async function sheetsLoad(email) {
     if (!data.success) { console.error('sheetsLoad API error', data); return null; }
     return data;
   } catch (err) { console.error('sheetsLoad exception', err); return null; }
+}
+
+// Paged variant — fetches one window of leads (limit/offset). Used to stream
+// leads in progressively so the first ~20 appear fast instead of blocking the
+// UI on the full set.
+async function sheetsLoadPage(email, offset, limit) {
+  try {
+    const url = `${getLeadsProxyUrl()}?action=load&email=${encodeURIComponent(email)}`
+      + `&limit=${limit}&offset=${offset}`;
+    const res = await fetch(url);
+    if (!res.ok) { console.error('sheetsLoadPage HTTP error', res.status); return null; }
+    const data = await res.json();
+    if (!data.success) { console.error('sheetsLoadPage API error', data); return null; }
+    return data;
+  } catch (err) { console.error('sheetsLoadPage exception', err); return null; }
 }
 
 async function sheetsPost(action, payload) {
@@ -426,11 +450,18 @@ const App = () => {
   const [leads, setLeads] = useState([]);
   const [emails, setEmails] = useState([]);
   const [reports, setReports] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // leadsLoading: leads are still streaming in from the backend (progressive
+  // 20-at-a-time load). The app shell + Dashboard render immediately regardless;
+  // only data-dependent views (Lead Manager) surface this as an inline state.
+  const [leadsLoading, setLeadsLoading] = useState(true);
   const [siteGen, setSiteGen] = useState({ active: false, completed: 0, total: 0, current: '', errors: [] });
   const [balance, setBalance] = useState(null);
   const initialLoadDone = useRef(false);
   const siteGenCancelRef = useRef(false);
+  // Find Leads stays mounted (under display:none) once visited so its search
+  // state survives navigation — but we don't mount it (and load its heavy chunk)
+  // until the user actually opens it the first time.
+  const visitedSearchRef = useRef(false);
 
   // Shared credit balance: navbar + LeadSearch both read this; LeadSearch triggers refresh after a charge.
   const refreshBalance = useCallback(async () => {
@@ -448,6 +479,21 @@ const App = () => {
   }, []);
 
   useEffect(() => { refreshBalance(); }, [refreshBalance]);
+
+  // Log a 'login' activity once per browser session (per resolved email), so the
+  // rollup can count daily active users without spamming a row on every remount.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const email = getUserEmail();
+    if (!email) return;
+    try {
+      const key = `leadscrapper:loginLogged:${email}`;
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, '1');
+        logActivity(EVENTS.LOGIN, { user: email });
+      }
+    } catch { /* sessionStorage unavailable — skip */ }
+  }, []);
 
   // When embedded in the Makerkit shell, listen for `setPage` messages from
   // the parent so clicking a sidebar link (even one pointing at the URL we're
@@ -474,16 +520,20 @@ const App = () => {
     const queue = (leadList || []).filter(l => l && l.id);
     if (queue.length === 0) { alert('No leads selected.'); return; }
     if (!getUserEmail()) { alert('Login first — no email found.'); return; }
+    // PostHog: track site generation start
+    if (window.posthog) {
+      posthog.capture('site_generation_started', { lead_count: queue.length });
+    }
     siteGenCancelRef.current = false;
     setSiteGen({ active: true, completed: 0, total: queue.length, current: '', stage: '', errors: [] });
     let completed = 0;
     const errors = [];
     for (const lead of queue) {
       if (siteGenCancelRef.current) break;
-      setSiteGen(s => ({ ...s, current: lead.business_name || lead.id, stage: 'build 1/3' }));
+      setSiteGen(s => ({ ...s, current: lead.business_name || lead.id, stage: 'build 1/2' }));
       try {
         const r = await generateSiteForLead(lead, (stage, tier) => {
-          const label = stage === 'log' ? 'logging' : `${stage} ${tier}/3`;
+          const label = stage === 'log' ? 'logging' : `${stage} ${tier}/2`;
           setSiteGen(s => ({ ...s, stage: label }));
         });
         // Update in-memory state immediately so the UI shows tier links.
@@ -491,7 +541,6 @@ const App = () => {
           ...l,
           tier1: r.tier1 || l.tier1,
           tier2: r.tier2 || l.tier2,
-          tier3: r.tier3 || l.tier3,
         } : l));
         // Persist back to Supabase (non-blocking for the next lead).
         persistTiersToSupabase(lead.id, r);
@@ -512,33 +561,48 @@ const App = () => {
 
   const handleCancelSiteGen = useCallback(() => { siteGenCancelRef.current = true; }, []);
 
-  // Load data from Google Sheets on mount
+  // Progressively load saved leads on mount. The app shell + Dashboard render
+  // immediately; leads stream in 20-at-a-time so the first page appears fast and
+  // the rest fill in the background. We do NOT block the whole UI on this.
   useEffect(() => {
     if (initialLoadDone.current) return;
     initialLoadDone.current = true;
 
-    const email = getUserEmail();
-    if (!email) {
-      setLoading(false);
+    const loadEmail = getUserEmail();
+    if (!loadEmail) {
+      setLeadsLoading(false);
       return;
     }
-
-    const loadEmail = getUserEmail();
     console.log('[sheetsLoad] email from storage:', loadEmail);
 
-    sheetsLoad(loadEmail).then(data => {
-      console.log('[sheetsLoad] response:', data?.success ? `ok, ${data.leads?.length ?? 0} leads` : 'FAIL', data);
-      if (data && data.success) {
-        if (data.leads) setLeads(data.leads.map(sheetRowToLead));
-        if (data.emails) setEmails(data.emails.map(sheetRowToEmail));
-        if (data.reports) setReports(data.reports.map(sheetRowToReport));
+    const PAGE = 20;
+    let cancelled = false;
+
+    (async () => {
+      let offset = 0;
+      try {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const data = await sheetsLoadPage(loadEmail, offset, PAGE);
+          if (cancelled) return;
+          const rows = (data && data.success && Array.isArray(data.leads)) ? data.leads : [];
+          if (rows.length > 0) {
+            setLeads(prev => [...prev, ...rows.map(sheetRowToLead)]);
+          }
+          console.log(`[sheetsLoad] page offset=${offset} got ${rows.length}`);
+          // A short page (or a failed/empty fetch) means we've reached the end.
+          if (!data || !data.success || rows.length < PAGE) break;
+          offset += PAGE;
+        }
+      } catch (err) {
+        console.error('[sheetsLoad] catch', err);
+        logError(MODULES.MGR, err, { user: getUserEmail(), component: 'app', action: 'load' });
+      } finally {
+        if (!cancelled) setLeadsLoading(false);
       }
-      setLoading(false);
-    }).catch(err => {
-      console.error('[sheetsLoad] catch', err);
-      logError(MODULES.MGR, err, { user: getUserEmail(), component: 'app', action: 'load' });
-      setLoading(false);
-    });
+    })();
+
+    return () => { cancelled = true; };
   }, []);
 
   const handleLogout = useCallback(() => {
@@ -645,6 +709,11 @@ const App = () => {
       }
     });
     sheetsPost('updateLead', { PlaceId: leadId, fields: { Status: 'contacted' } });
+    logActivity(EVENTS.EMAIL_WRITTEN, { user: getUserEmail(), count: 1, meta: { leadId, business: lead.business_name } });
+    // PostHog: track email sent
+    if (window.posthog) {
+      posthog.capture('lead_email_sent', { leadId, business: lead.business_name });
+    }
   }, [leads]);
 
   // Reports live in localStorage (the PHP proxy has no saveReport/deleteReport
@@ -686,6 +755,11 @@ const App = () => {
       persistReports(next);
       return next;
     });
+    logActivity(EVENTS.REPORT, { user: getUserEmail(), count: 1, meta: { leadId, business: lead.business_name } });
+    // PostHog: track report generated
+    if (window.posthog) {
+      posthog.capture('lead_report_generated', { leadId, business: lead.business_name });
+    }
   }, [leads, persistReports]);
 
    const handleDeleteReport = useCallback((reportId) => {
@@ -706,6 +780,16 @@ const App = () => {
     </ErrorBoundary>
   );
 
+  // Fallback shown while a lazily-loaded route chunk is downloading.
+  const chunkFallback = (
+    <div className="flex items-center justify-center h-64">
+      <div className="text-center space-y-3">
+        <div className="loading loading-spinner loading-lg text-primary"></div>
+        <p className="text-base-content/60 text-sm">Loading…</p>
+      </div>
+    </div>
+  );
+
   const renderPage = () => {
     switch (page) {
       case 'dashboard':
@@ -714,7 +798,7 @@ const App = () => {
         if (!selectedLead) { setPage(prevPage); return null; }
         return bounded(MODULES.MGR, 'LeadDetail', <LeadDetail lead={selectedLead} onBack={() => setPage(prevPage)} onGenerateEmail={handleGenerateEmail} onGenerateReport={handleGoToReport} />);
       case 'leads':
-        return bounded(MODULES.MGR, 'LeadManager', <LeadManager leads={leads} onViewDetail={handleViewDetail} onUpdateStatus={handleUpdateStatus} onUpdateNotes={handleUpdateNotes} onDeleteLead={handleDeleteLead} onGenerateEmail={handleGenerateEmail} onGenerateSites={handleGenerateSites} siteGen={siteGen} onCancelSiteGen={handleCancelSiteGen} />);
+        return bounded(MODULES.MGR, 'LeadManager', <LeadManager leads={leads} leadsLoading={leadsLoading} onViewDetail={handleViewDetail} onUpdateStatus={handleUpdateStatus} onUpdateNotes={handleUpdateNotes} onDeleteLead={handleDeleteLead} onGenerateEmail={handleGenerateEmail} onGenerateSites={handleGenerateSites} siteGen={siteGen} onCancelSiteGen={handleCancelSiteGen} />);
       case 'email-gen':
         return bounded(MODULES.GEN, 'EmailGenerator', <EmailGenerator leads={leads} selectedLeadId={selectedLeadId} onSendEmail={handleSendEmail} />);
        case 'reports':
@@ -732,6 +816,10 @@ const App = () => {
     }
   };
 
+  // Mark Find Leads as visited the first time we land on it, so it mounts and
+  // then stays mounted (state preserved) on subsequent navigation.
+  if (page === 'search') visitedSearchRef.current = true;
+
   return (
     <div className="flex h-screen w-full bg-base-200 overflow-hidden">
       {!isEmbed && <Sidebar currentPage={page} onNavigate={p => setPage(p)} collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)} onLogout={handleLogout} />}
@@ -739,15 +827,11 @@ const App = () => {
         {!isEmbed && <TopNavbar balance={balance} userEmail={getUserEmail()} onLogout={handleLogout} />}
         <main className="flex-1 overflow-y-auto">
           <div className="p-4">
-            {loading ? (
-              <div className="flex items-center justify-center h-64">
-                <div className="text-center space-y-3">
-                  <div className="loading loading-spinner loading-lg text-primary"></div>
-                  <p className="text-base-content/60 text-sm">Loading your data...</p>
-                </div>
-              </div>
-            ) : (
-              <>
+            <Suspense fallback={chunkFallback}>
+              {/* Find Leads stays mounted (display:none when hidden) once visited
+                  so its search state survives navigation. We don't mount it — and
+                  thus don't download its heavy chunk — until the first visit. */}
+              {visitedSearchRef.current && (
                 <div style={{ display: page === 'search' ? 'block' : 'none' }}>
                   {/* onViewLead does NOT auto-save — only explicit Save/Bookmark button saves */}
                   <ErrorBoundary module={MODULES.LEAD} componentName="LeadSearch" user={getUserEmail()}>
@@ -765,9 +849,9 @@ const App = () => {
                     />
                   </ErrorBoundary>
                 </div>
-                {page !== 'search' && renderPage()}
-              </>
-            )}
+              )}
+              {page !== 'search' && renderPage()}
+            </Suspense>
           </div>
         </main>
       </div>

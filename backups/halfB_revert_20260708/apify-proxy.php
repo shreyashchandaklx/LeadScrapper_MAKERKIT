@@ -549,7 +549,25 @@ if ($action === 'run') {
         }
     }
 
-    // ─── Cache miss: call Apify normally ─────────────────────────────────────
+    // ─── Cache miss: call Apify with the USER'S OWN key (BYOK) ───────────────
+    // The scrape is only ever run by the FIRST user to request an uncached query;
+    // later users hit the cache branch above (no Apify, key untouched). So the
+    // key requirement applies ONLY here, on a genuine cache miss.
+    $userApifyToken = credits_get_apify_token($userEmail);
+    if ($userApifyToken === '') {
+        http_response_code(400);
+        echo json_encode([
+            'error'   => 'NO_APIFY_KEY',
+            'message' => 'Add your Apify API key in Settings before searching new leads.',
+        ]);
+        exit;
+    }
+    // Use the user's single key instead of the house rotation pool. A one-element
+    // token list keeps apifyRequest()'s signature intact (it just never rotates).
+    $allTokens = [$userApifyToken];
+    $currentIndex = 0;
+    $token = $userApifyToken;
+
     $actorId = 'compass~crawler-google-places';
     $url = "https://api.apify.com/v2/acts/$actorId/runs?token={TOKEN}";
 
@@ -562,6 +580,20 @@ if ($action === 'run') {
     $apifyInputJson = json_encode($apifyInput);
 
     $resp = apifyRequest('POST', $url, $token, $allTokens, $currentIndex, $stateFile, $apifyInputJson);
+
+    // BYOK key-error surfacing. NOTE: apifyRequest() treats 402/403/429 as
+    // rotate-triggers; with a single user key it exhausts after one try and
+    // returns 503. So the codes that actually reach us for a bad/limited key
+    // are 401 (invalid), 402 (quota), 429 (rate), or 503 (exhausted single key).
+    $keyErrCodes = [401, 402, 403, 429, 503];
+    if (in_array($resp['httpCode'], $keyErrCodes, true)) {
+        http_response_code(400);
+        echo json_encode([
+            'error'   => 'INVALID_APIFY_KEY',
+            'message' => 'Your Apify API key is invalid, expired, out of quota, or lacks access to the Google Maps scraper actor.',
+        ]);
+        exit;
+    }
 
     // If run started successfully, map the runId to the key that started it
     // and advance to the next key for the NEXT query (per-query rotation)
@@ -616,12 +648,15 @@ if ($action === 'run') {
         exit;
     }
 
-    // Use the same key that started this run (if known)
-    if (isset($runKeyMap[$runId])) {
-        $entry = $runKeyMap[$runId];
-        $mappedIndex = is_array($entry) ? (int) ($entry['keyIndex'] ?? -1) : (int) $entry;
-        if ($mappedIndex >= 0 && $mappedIndex < count($allTokens)) {
-            $token = $allTokens[$mappedIndex];
+    // BYOK: reuse the SAME user key that started this run. runKeyMap stores the
+    // run owner's email; re-look-up their token so check hits the right account.
+    if (isset($runKeyMap[$runId]) && is_array($runKeyMap[$runId])) {
+        $runEmail = (string) ($runKeyMap[$runId]['email'] ?? '');
+        $runToken = $runEmail !== '' ? credits_get_apify_token($runEmail) : '';
+        if ($runToken !== '') {
+            $allTokens = [$runToken];
+            $currentIndex = 0;
+            $token = $runToken;
         }
     }
 
@@ -679,18 +714,20 @@ if ($action === 'run') {
     $cacheKeyForMerge = null;
     $billing          = null;
 
-    // Use the same key that started this run (if runId provided)
+    // Use the same run's context (if runId provided). BYOK: resolve the token
+    // from the run owner's email so the dataset fetch uses the same user key.
     if ($runId !== '' && isset($runKeyMap[$runId])) {
         $entry = $runKeyMap[$runId];
         if (is_array($entry)) {
-            $mappedIndex      = (int) ($entry['keyIndex'] ?? -1);
             $cacheKeyForMerge = $entry['cacheKey'] ?? null;
             $billing          = $entry;
-        } else {
-            $mappedIndex = (int) $entry;
-        }
-        if ($mappedIndex >= 0 && $mappedIndex < count($allTokens)) {
-            $token = $allTokens[$mappedIndex];
+            $runEmail         = (string) ($entry['email'] ?? '');
+            $runToken         = $runEmail !== '' ? credits_get_apify_token($runEmail) : '';
+            if ($runToken !== '') {
+                $allTokens = [$runToken];
+                $currentIndex = 0;
+                $token = $runToken;
+            }
         }
     }
 

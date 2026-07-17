@@ -73,19 +73,26 @@ function errlog_clamp($s, $max) {
 }
 
 /**
- * Ensure logs/ exists and is protected. Never throws.
- * @return bool whether the directory is usable
+ * Ensure logs/ + today's dated subfolder exist and are protected. Never throws.
+ * Layout: logs/YYYY-MM-DD/error.log (+ activity.log written by activity_logger.php).
+ * @param string $date  YYYY-MM-DD (the dated subfolder)
+ * @return string|false  the usable dated dir path, or false if not writable
  */
-function errlog_ensure_dir() {
+function errlog_ensure_dir($date) {
     if (!is_dir(ERRLOG_DIR)) {
         if (!@mkdir(ERRLOG_DIR, 0755, true)) return false;
     }
+    // Deny-all at the logs/ root covers all dated subfolders (nginx needs its own
+    // rule too — see log_errors.md §2).
     $ht = ERRLOG_DIR . '/.htaccess';
     if (!file_exists($ht)) {
-        // Apache-style protection; nginx needs its own deny rule (see log_errors.md §2)
         @file_put_contents($ht, "Require all denied\nDeny from all\n");
     }
-    return is_writable(ERRLOG_DIR);
+    $dayDir = ERRLOG_DIR . '/' . $date;
+    if (!is_dir($dayDir)) {
+        if (!@mkdir($dayDir, 0755, true)) return false;
+    }
+    return is_writable($dayDir) ? $dayDir : false;
 }
 
 /**
@@ -133,8 +140,10 @@ function log_error($module, $message, $opts = []) {
             $line = json_encode(['id' => $id, 'module' => $module, 'message' => '[unencodable error entry]']);
         }
 
-        if (errlog_ensure_dir()) {
-            $file = ERRLOG_DIR . '/errors-' . date('Y-m-d') . '.log';
+        $date = date('Y-m-d');
+        $dayDir = errlog_ensure_dir($date);
+        if ($dayDir !== false) {
+            $file = $dayDir . '/error.log';   // logs/YYYY-MM-DD/error.log
             // LOCK_EX so two simultaneous requests can't interleave lines
             if (@file_put_contents($file, $line . "\n", FILE_APPEND | LOCK_EX) !== false) {
                 return $id;

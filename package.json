@@ -5,7 +5,7 @@
     "dev": "vite",
     "build": "vite build && npm run copy-php",
     "preview": "vite preview",
-    "copy-php": "node -e \"const fs=require('fs'),path=require('path');['.env','send-otp.php','apify-proxy.php','extract-email.php','sheets-proxy.php','shorten-url.php','leads-proxy.php','map2web-proxy.php','leadscrapper-credits-proxy.php','error-log.php'].forEach(f=>{if(fs.existsSync(f))fs.copyFileSync(f,'dist/'+f)});fs.mkdirSync('dist/lib',{recursive:true});['supabase.php','credits.php','supabase_cache.php','error_logger.php'].forEach(f=>{if(fs.existsSync('lib/'+f))fs.copyFileSync('lib/'+f,'dist/lib/'+f)})\""
+    "copy-php": "node -e \"const fs=require('fs'),path=require('path');['.env','send-otp.php','apify-proxy.php','apify-key.php','extract-email.php','sheets-proxy.php','shorten-url.php','leads-proxy.php','map2web-proxy.php','leadscrapper-credits-proxy.php','error-log.php','city-scrape-proxy.php','city_scrape_worker.php','activity-log.php','activity-report.php'].forEach(f=>{if(fs.existsSync(f))fs.copyFileSync(f,'dist/'+f)});fs.mkdirSync('dist/lib',{recursive:true});['supabase.php','credits.php','supabase_cache.php','error_logger.php','city_scrape.php','activity_logger.php','keyword_normalize.php'].forEach(f=>{if(fs.existsSync('lib/'+f))fs.copyFileSync('lib/'+f,'dist/lib/'+f)})\""
   },
   "dependencies": {
     "country-state-city": "^3.2.1",

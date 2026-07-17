@@ -262,6 +262,10 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
   const cityPollRef = useRef(null);             // setInterval handle for job-status polling
   const cityCancelRef = useRef(false);          // user cancelled the city job (stop pulling)
 
+  /* Inline error banner */
+  const [bannerError, setBannerError] = useState(null);
+  const bannerTimerRef = useRef(null);
+
   /* Timer refs */
   const timerRef = useRef(null);
   const cancelRef = useRef(false); // Ref to signal search cancellation
@@ -271,8 +275,18 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
   useEffect(() => () => {
     if (cityPollRef.current) clearInterval(cityPollRef.current);
     if (timerRef.current) clearInterval(timerRef.current);
+    if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
     cityCancelRef.current = true;
   }, []);
+
+  // Auto-dismiss banner error after 6 seconds
+  useEffect(() => {
+    if (bannerError) {
+      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+      bannerTimerRef.current = setTimeout(() => setBannerError(null), 6000);
+    }
+    return () => { if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current); };
+  }, [bannerError]);
 
   // Memoized country-state-city lookups.
   const allCountries = useMemo(() => Country.getAllCountries(), []);
@@ -540,6 +554,18 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
       alert('Whole-city scraping is not available for this location — please enter a ZIP/PIN code.');
       return;
     }
+    // BYOK gate: user MUST have a saved Apify key before any search
+    try {
+      const keyCheck = await fetch(`${APIFY_PROXY_URL.replace('apify-proxy.php', 'apify-key.php')}?action=get&email=${encodeURIComponent(userEmail)}`);
+      const keyData = await keyCheck.json();
+      if (!keyData.hasKey) {
+        setBannerError('Add your Apify API key using the key icon in the top bar before searching.');
+        return;
+      }
+    } catch (e) {
+      setBannerError('Could not verify your Apify API key. Please check your connection and try again.');
+      return;
+    }
     setLoading(true);
     setResults([]);
     setChargeInfo(null);
@@ -660,7 +686,12 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
       if (!errorId && !isUserError) {
         errorId = logError(MODULES.LEAD, error, { user: userEmail || 'anonymous', component: 'LeadSearch', action: 'city-scrape' });
       }
-      const msg = isUserError ? 'You ran out of credits — top up at app.pixnom.com to get the rest.' : error.message;
+      // BYOK-friendly error messages
+      const isNoKey = /NO_APIFY_KEY/i.test(error.message || '') || /add your apify api key/i.test(error.message || '');
+      const isInvalidKey = /INVALID_APIFY_KEY/i.test(error.message || '') || /invalid.*apify.*key/i.test(error.message || '');
+      let msg = isUserError ? 'You ran out of credits — top up at app.pixnom.com to get the rest.' : error.message;
+      if (isNoKey) msg = 'Add your Apify API key using the key icon in the top bar before starting a city scrape.';
+      else if (isInvalidKey) msg = 'Your Apify API key is invalid, expired, or lacks access to the Google Maps scraper. Update it using the key icon in the top bar.';
 
       setProgress(`Error: ${msg}${errorId ? ` (Error ID: ${errorId})` : ''}`);
       alert(`City scrape: ${msg}${errorId ? `\n\nError ID: ${errorId}` : ''}`);
@@ -701,6 +732,19 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
     }
     if (!userEmail) {
       alert('You must be logged in. Please log in with your email to search for leads.');
+      return;
+    }
+
+    // BYOK gate: user MUST have a saved Apify key before any search (cache hit or miss)
+    try {
+      const keyCheck = await fetch(`${APIFY_PROXY_URL.replace('apify-proxy.php', 'apify-key.php')}?action=get&email=${encodeURIComponent(userEmail)}`);
+      const keyData = await keyCheck.json();
+      if (!keyData.hasKey) {
+        setBannerError('Add your Apify API key using the key icon in the top bar before searching.');
+        return;
+      }
+    } catch (e) {
+      setBannerError('Could not verify your Apify API key. Please check your connection and try again.');
       return;
     }
 
@@ -923,9 +967,16 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
           action: 'search',
         });
       }
+      // BYOK-friendly error messages
+      const isNoKey = /NO_APIFY_KEY/i.test(error.message || '') || /add your apify api key/i.test(error.message || '');
+      const isInvalidKey = /INVALID_APIFY_KEY/i.test(error.message || '') || /invalid.*apify.*key/i.test(error.message || '');
+      let userMsg = error.message;
+      if (isNoKey) userMsg = 'Add your Apify API key using the key icon in the top bar before searching new leads.';
+      else if (isInvalidKey) userMsg = 'Your Apify API key is invalid, expired, or lacks access to the Google Maps scraper. Update it using the key icon in the top bar.';
+
       const suffix = errorId ? `\n\nError ID: ${errorId}` : '';
-      setProgress(`Error: ${error.message}${errorId ? ` (Error ID: ${errorId})` : ''}`);
-      alert(`Search failed: ${error.message}${suffix}`);
+      setProgress(`Error: ${userMsg}${errorId ? ` (Error ID: ${errorId})` : ''}`);
+      alert(`Search failed: ${userMsg}${suffix}`);
     } finally {
       // Cleanup timer and loading state
       if (timerRef.current) clearInterval(timerRef.current);
@@ -1242,6 +1293,20 @@ export default function LeadSearch({ onViewLead, onSaveLead, onBulkSaveLeads, sa
 
   return (
     <div className="space-y-6">
+      {/* Inline error banner */}
+      {bannerError && (
+        <div className="flex items-start gap-3 rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+          <svg className="mt-0.5 h-4 w-4 shrink-0 text-red-500" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+          </svg>
+          <span className="flex-1">{bannerError}</span>
+          <button onClick={() => setBannerError(null)} className="ml-2 shrink-0 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-200">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
       {/* Header Section */}
       <div className="flex items-center justify-between">
         <div>

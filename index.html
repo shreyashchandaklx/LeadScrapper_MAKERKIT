@@ -11,6 +11,45 @@
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=renderTurnstile&render=explicit" async defer></script>
     <script async src="https://assets.endorsely.com/endorsely.js" data-endorsely="06a46c6b-2f9f-472e-ada9-06711edd0016"></script>
+    <script>
+        !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled onFeatureFlags getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures getActiveMatchingSurveys getSurveys onSessionId".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+        posthog.init('phc_zCwgYZYRbW6wgcmiRcuGrWiVgzKnDKsmyr8vMNhvQ3cP', {
+            api_host: 'https://us.i.posthog.com',
+            autocapture: true,
+            session_recording: { maskTextSelector: '.sensitive', maskTextAttributes: ['placeholder', 'value'] },
+            capture_pageview: true,
+            capture_pageleave: true
+        });
+        // Identify returning logged-in users (reset first to prevent identity merging)
+        (function() {
+            var email = localStorage.getItem('loggedInUser');
+            if (email && window.posthog) {
+                var currentId = posthog.get_distinct_id ? posthog.get_distinct_id() : '';
+                if (currentId && currentId !== email) { posthog.reset(); }
+                posthog.identify(email, { email: email });
+            }
+        })();
+        // Capture JS errors
+        window.addEventListener('error', function(e) {
+            if (window.posthog) {
+                posthog.capture('$exception', {
+                    $exception_type: 'JS Error',
+                    $exception_message: e.message,
+                    $exception_source: e.filename,
+                    $exception_line: e.lineno,
+                    $exception_column: e.colno
+                });
+            }
+        });
+        window.addEventListener('unhandledrejection', function(e) {
+            if (window.posthog) {
+                posthog.capture('$exception', {
+                    $exception_type: 'Unhandled Promise',
+                    $exception_message: String(e.reason)
+                });
+            }
+        });
+    </script>
 
     <!-- Paper Design Theme -->
     <style>
@@ -336,6 +375,11 @@
           const email = document.getElementById('login-email').value.trim().toLowerCase();
           localStorage.setItem('loggedIn', 'true');
           localStorage.setItem('loggedInUser', email);
+          // PostHog: reset identity then identify user after login (prevents cross-account merging)
+          if (window.posthog) {
+            posthog.reset();
+            posthog.identify(email, { email: email });
+          }
           showApp();
         } else {
           showToast('Invalid OTP code.', 'error');

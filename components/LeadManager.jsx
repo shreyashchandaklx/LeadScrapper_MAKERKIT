@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Users, List, LayoutGrid, Search, Eye, Mail, Trash2, MessageSquare, Star, Calendar, Filter, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Hash, Building, MapPin, Globe, Phone, ShieldCheck, ShieldX, DollarSign, Tag, AlertTriangle, Bookmark, ExternalLink, MapPinned, Clock, Image, Ban, Download, Loader2 } from 'lucide-react';
-import { getScoreColor, getScoreLabel, getStatusBadge, formatDate } from '../utils/helpers.js';
+import { getStatusBadge } from '../utils/helpers.js';
+import { logActivity, EVENTS } from '../utils/activityLogger.js';
 
 const ALL_COL_CONFIG = [
   { key: 'business_name', label: 'Business Name', icon: Building },
   { key: 'sites', label: 'Sites', icon: Globe },
   { key: 'category', label: 'Category', icon: Tag },
-  { key: 'score', label: 'Lead Score', icon: AlertTriangle },
   { key: 'status', label: 'Status', icon: Bookmark },
   { key: 'address', label: 'Address', icon: MapPin },
   { key: 'neighborhood', label: 'Neighborhood', icon: MapPinned },
@@ -33,10 +33,10 @@ const ALL_COL_CONFIG = [
   { key: 'follow_up_date', label: 'Follow Up', icon: Calendar },
 ];
 
-const DEFAULT_VISIBLE = ['business_name', 'sites', 'category', 'score', 'status', 'address', 'email', 'rating', 'review_count', 'follow_up_date'];
+const DEFAULT_VISIBLE = ['business_name', 'sites', 'category', 'status', 'address', 'email', 'rating', 'review_count', 'follow_up_date'];
 const PAGE_SIZE = 20;
 
-export const LeadManager = ({ leads, onViewDetail, onUpdateStatus, onUpdateNotes, onDeleteLead, onGenerateEmail, onGenerateSites, siteGen, onCancelSiteGen }) => {
+export const LeadManager = ({ leads, leadsLoading, onViewDetail, onUpdateStatus, onUpdateNotes, onDeleteLead, onGenerateEmail, onGenerateSites, siteGen, onCancelSiteGen }) => {
   const [view, setView] = useState('list');
   const [search, setSearch] = useState('');
   const [editingNotes, setEditingNotes] = useState(null);
@@ -120,6 +120,12 @@ export const LeadManager = ({ leads, onViewDetail, onUpdateStatus, onUpdateNotes
     a.download = `saved_leads_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
+    const user = (typeof window !== 'undefined' && localStorage.getItem('loggedInUser')) || 'anonymous';
+    logActivity(EVENTS.EXPORT, { user, count: filtered.length, meta: { source: 'manager' } });
+    // PostHog: track export
+    if (window.posthog) {
+      posthog.capture('lead_export', { source: 'manager', count: filtered.length });
+    }
   };
 
   const KanbanCard = ({ lead }) => (
@@ -130,8 +136,14 @@ export const LeadManager = ({ leads, onViewDetail, onUpdateStatus, onUpdateNotes
     >
       <div className="p-3 space-y-1.5">
         <div className="flex items-center justify-between">
-          <p className="text-sm font-medium text-base-content truncate flex-1">{lead.business_name}</p>
-          <span className={`text-xs font-bold ${getScoreColor(lead.score)}`}>{lead.score}</span>
+          <button
+            type="button"
+            onClick={() => onViewDetail(lead.id)}
+            className="text-sm font-medium text-base-content truncate flex-1 text-left hover:text-primary hover:underline cursor-pointer"
+            title="View Detail"
+          >
+            {lead.business_name}
+          </button>
         </div>
         <p className="text-xs text-base-content/40">{lead.category} &middot; {lead.city}</p>
 
@@ -172,8 +184,29 @@ export const LeadManager = ({ leads, onViewDetail, onUpdateStatus, onUpdateNotes
     </div>
   );
 
+  // Leads stream in progressively from the backend. While the first page is
+  // still in flight and we have nothing to show yet, surface a small inline
+  // state instead of an empty table. Once any leads have arrived we render the
+  // list normally — more will keep appending in the background.
+  if (leadsLoading && leads.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center space-y-3">
+          <div className="loading loading-spinner loading-lg text-primary"></div>
+          <p className="text-base-content/60 text-sm">Loading leads…</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 space-y-4 overflow-y-auto h-full">
+      {leadsLoading && (
+        <div className="text-xs text-base-content/50 flex items-center gap-2">
+          <span className="loading loading-spinner loading-xs"></span>
+          Loading more leads…
+        </div>
+      )}
       {/* Toolbar */}
       <div className="flex items-center gap-3 flex-wrap border border-base-300 bg-base-100 p-4 rounded">
         <label className="input input-bordered input-sm flex items-center gap-2 flex-1 max-w-xs bg-base-100">
@@ -198,7 +231,7 @@ export const LeadManager = ({ leads, onViewDetail, onUpdateStatus, onUpdateNotes
                 <div className="col-span-2 md:col-span-3 flex gap-2 mb-2 border-b border-base-300 pb-2">
                   <button onClick={() => setVisibleCols(ALL_COL_CONFIG.map(c => c.key))} className="text-xs text-base-content hover:underline">Show All</button>
                   <button onClick={() => setVisibleCols(DEFAULT_VISIBLE)} className="text-xs text-secondary hover:underline">Reset Default</button>
-                  <button onClick={() => setVisibleCols(['business_name', 'score', 'status'])} className="text-xs text-base-content/40 hover:underline">Minimal</button>
+                  <button onClick={() => setVisibleCols(['business_name', 'category', 'status'])} className="text-xs text-base-content/40 hover:underline">Minimal</button>
                 </div>
                 {ALL_COL_CONFIG.map(col => (
                   <label key={col.key} className="flex items-center gap-2 text-xs text-base-content/70 cursor-pointer hover:bg-base-200 rounded px-2 py-1">
@@ -327,14 +360,14 @@ export const LeadManager = ({ leads, onViewDetail, onUpdateStatus, onUpdateNotes
                     />
                   </th>
                   {ALL_COL_CONFIG.filter(c => visibleCols.includes(c.key)).map(col => (
-                    <th key={col.key} className="whitespace-nowrap text-[10px] font-medium tracking-wider uppercase" style={{fontFamily:"'Inter',sans-serif",color:'#9CA3AF'}}>
+                    <th key={col.key} className="whitespace-nowrap text-[10px] font-semibold tracking-wider uppercase" style={{fontFamily:"'Inter',sans-serif",color:'#374151'}}>
                       <div className="flex items-center gap-1">
-                        <col.icon size={11} className="opacity-30" />
+                        <col.icon size={11} className="opacity-60" />
                         {col.label}
                       </div>
                     </th>
                   ))}
-                  <th className="whitespace-nowrap text-[10px] font-medium tracking-wider uppercase text-center" style={{fontFamily:"'Inter',sans-serif",color:'#9CA3AF'}}>Actions</th>
+                  <th className="whitespace-nowrap text-[10px] font-semibold tracking-wider uppercase text-center" style={{fontFamily:"'Inter',sans-serif",color:'#374151'}}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -347,7 +380,14 @@ export const LeadManager = ({ leads, onViewDetail, onUpdateStatus, onUpdateNotes
                       </td>
                       {visibleCols.includes('business_name') && (
                         <td className="min-w-[200px]">
-                          <p className="font-medium text-base-content">{lead.business_name}</p>
+                          <button
+                            type="button"
+                            onClick={() => onViewDetail(lead.id)}
+                            className="font-medium text-base-content text-left hover:text-primary hover:underline cursor-pointer"
+                            title="View Detail"
+                          >
+                            {lead.business_name}
+                          </button>
                           <p className="text-[10px] text-base-content/30 leading-tight">{lead.city}, {lead.state}</p>
                         </td>
                       )}
@@ -375,16 +415,6 @@ export const LeadManager = ({ leads, onViewDetail, onUpdateStatus, onUpdateNotes
                       )}
                     {visibleCols.includes('category') && (
                       <td><span className="text-xs text-base-content/60 bg-base-200 px-2 py-0.5 rounded">{lead.category}</span></td>
-                    )}
-                    {visibleCols.includes('score') && (
-                      <td>
-                        <div className="flex items-center gap-2">
-                          <div className="w-10 h-1 rounded-full bg-base-200 overflow-hidden">
-                            <div className={`h-full rounded-full ${lead.score >= 70 ? 'bg-error' : lead.score >= 40 ? 'bg-warning' : 'bg-success'}`} style={{ width: `${lead.score}%` }} />
-                          </div>
-                          <span className={`font-bold text-xs ${getScoreColor(lead.score)}`}>{lead.score}</span>
-                        </div>
-                      </td>
                     )}
                     {visibleCols.includes('status') && (
                       <td>

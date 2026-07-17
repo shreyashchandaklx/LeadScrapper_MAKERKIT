@@ -119,11 +119,18 @@ switch ($action) {
         $customerId = credits_get_or_create_customer_id($email);
         if ($customerId === null) fail(500, 'could not resolve CustomerID for ' . $email);
 
+        // Optional paging — lets the frontend stream leads in 20-at-a-time so the
+        // first page appears fast instead of blocking on the full set. Defaults
+        // preserve the old "load everything" behavior when not supplied.
+        $limit  = isset($_GET['limit'])  ? max(1, (int)$_GET['limit'])  : 10000;
+        $offset = isset($_GET['offset']) ? max(0, (int)$_GET['offset']) : 0;
+
         // 1. Pull the user's saved + delivered rows (all leads they've received)
         $q1 = 'CustomerID=eq.' . urlencode((string)$customerId)
             . '&Status=in.(saved,delivered)'
             . '&order=CreatedAt.desc'
-            . '&limit=10000';
+            . '&limit=' . $limit
+            . '&offset=' . $offset;
         $r1 = sb_select(STATE_TABLE, $q1);
         if ($r1['status'] >= 400) fail(500, 'supabase load (state) failed', $r1['raw']);
         $stateRows = is_array($r1['json']) ? $r1['json'] : [];
@@ -293,6 +300,9 @@ switch ($action) {
             $patch['LeadScore'] = ($v === '' ? null : $v);
         }
         if (array_key_exists('Status',    $fields)) $patch['ManagerStatus'] = $fields['Status'];
+        if (array_key_exists('Tier1',     $fields)) $patch['Tier1']         = $fields['Tier1'];
+        if (array_key_exists('Tier2',     $fields)) $patch['Tier2']         = $fields['Tier2'];
+        if (array_key_exists('Tier3',     $fields)) $patch['Tier3']         = $fields['Tier3'];
 
         if (!$patch) fail(400, 'no editable fields in patch');
 
